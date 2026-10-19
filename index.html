@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2563eb">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Inventory">
+  <title>Inventory</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1 id="title">Inventory</h1>
+    <div class="topbar-actions">
+      <button id="btn-add" class="icon-btn" aria-label="Add item">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button id="btn-menu" class="icon-btn" aria-label="More actions">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <section id="view-inventory" class="view active" aria-label="Inventory">
+      <div class="toolbar">
+        <input id="search" type="search" placeholder="Search" autocomplete="off" enterkeyhint="search">
+        <select id="category-filter" aria-label="Category"></select>
+      </div>
+      <ul id="inventory-list" class="list"></ul>
+    </section>
+
+    <section id="view-selected" class="view" aria-label="Selected">
+      <ul id="selected-list" class="list"></ul>
+      <div id="selected-footer" class="footer-bar" hidden>
+        <span id="selected-summary" class="summary"></span>
+        <button id="btn-clear-selected" class="btn">Clear</button>
+        <button id="btn-place-order" class="btn primary">Place Order</button>
+      </div>
+    </section>
+
+    <section id="view-history" class="view" aria-label="Order History">
+      <ul id="history-list" class="list"></ul>
+    </section>
+  </main>
+
+  <nav class="tabbar" role="tablist">
+    <button class="tab active" data-tab="inventory" role="tab" aria-selected="true">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="M3 7.5 12 12l9-4.5M12 12v9"/></svg>
+      <span>Inventory</span>
+    </button>
+    <button class="tab" data-tab="selected" role="tab" aria-selected="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9"/></svg>
+      <span>Selected</span>
+      <b id="selected-badge" class="badge" hidden></b>
+    </button>
+    <button class="tab" data-tab="history" role="tab" aria-selected="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      <span>History</span>
+    </button>
+  </nav>
+
+  <dialog id="item-dialog">
+    <form id="item-form">
+      <h2 id="item-dialog-title">Add Item</h2>
+      <div class="photo-field">
+        <button type="button" id="photo-preview" class="photo-preview" aria-label="Choose photo">
+          <img alt="" hidden>
+          <span>Add photo</span>
+        </button>
+        <button type="button" id="btn-photo-remove" class="btn small danger">Remove photo</button>
+      </div>
+      <div class="field-row">
+        <label>ID<input name="code" readonly tabindex="-1"></label>
+        <label>Brand<input name="brand" list="brand-list" autocomplete="off"></label>
+      </div>
+      <label>Category<input name="category" list="category-list" autocomplete="off"></label>
+      <label>Name1<input name="name1" required autocomplete="off"></label>
+      <label>Name2<input name="name2" autocomplete="off"></label>
+      <div class="field-row">
+        <label>Size<input name="size" autocomplete="off"></label>
+        <label>Order Unit<input name="orderUnit" list="unit-list" placeholder="e.g. box, case" autocomplete="off"></label>
+      </div>
+      <div class="field-row">
+        <label>Vendor1<input name="vendor1" list="vendor-list" autocomplete="off"></label>
+        <label>Vendor2<input name="vendor2" list="vendor-list" autocomplete="off"></label>
+      </div>
+      <label>Remarks<textarea name="remarks" rows="2"></textarea></label>
+      <div class="dialog-actions">
+        <button type="button" id="btn-delete-item" class="btn danger">Delete</button>
+        <span class="spacer"></span>
+        <button type="button" id="btn-cancel-item" class="btn">Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+  <datalist id="category-list"></datalist>
+  <datalist id="brand-list"></datalist>
+  <datalist id="unit-list"></datalist>
+  <datalist id="vendor-list"></datalist>
+
+  <dialog id="order-dialog">
+    <form id="order-form">
+      <h2>Place Order</h2>
+      <p id="order-summary" class="dialog-note"></p>
+      <label>Order prefix<input name="prefix" required autocomplete="off" autocapitalize="characters" enterkeyhint="done"></label>
+      <p class="dialog-note">Order number: <strong id="order-preview"></strong></p>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" id="btn-cancel-order" class="btn">Cancel</button>
+        <button type="submit" class="btn primary">Place Order</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="menu-dialog" class="sheet">
+    <div class="sheet-group">
+      <button data-menu="import">Import inventory from CSV</button>
+      <button data-menu="import-photos">Import photos (file name = ID)</button>
+      <button data-menu="export-photos">Export photos (ZIP)</button>
+      <button data-menu="export-inventory">Export inventory CSV</button>
+      <button data-menu="export-orders">Export order history CSV</button>
+      <button data-menu="reset" class="danger">Erase all data</button>
+    </div>
+    <div class="sheet-group">
+      <button data-menu="close" class="bold">Cancel</button>
+    </div>
+  </dialog>
+
+  <dialog id="image-dialog" class="lightbox" aria-label="Photo">
+    <img alt="">
+    <div class="lightbox-actions">
+      <button type="button" id="btn-save-photo" class="btn">Save photo</button>
+      <button type="button" id="btn-close-photo" class="btn primary">Close</button>
+    </div>
+  </dialog>
+
+  <input type="file" id="csv-input" accept=".csv,text/csv,text/plain" hidden>
+  <input type="file" id="photo-input" accept="image/*" hidden>
+  <input type="file" id="photos-bulk-input" accept="image/*" multiple hidden>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

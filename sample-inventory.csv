@@ -1,0 +1,8 @@
+Brand,Category,Name1,Name2,Size,Order Unit,Vendor1,Vendor2,Remarks
+Uline,Packaging,Shipping box small,Single wall,30 x 20 x 15 cm,bundle of 25,PackRight Supply,Office Depot,
+Uline,Packaging,Shipping box medium,Single wall,40 x 30 x 25 cm,bundle of 25,PackRight Supply,Office Depot,
+3M,Packaging,Packing tape,Clear,48 mm x 66 m,case of 36,PackRight Supply,,
+Zebra,Labels,Thermal labels,Direct thermal,"4"" x 6""",roll,LabelCo,PackRight Supply,Check printer model before ordering
+Bic,Office,Ballpoint pen,Black,Medium 1.0 mm,box of 50,Office Depot,Staples,
+Double A,Office,Copy paper,80 gsm,A4,case of 5 reams,Office Depot,Staples,
+Ansell,Safety,Nitrile gloves,Powder-free,M,box of 100,SafetyFirst,,Latex-free
