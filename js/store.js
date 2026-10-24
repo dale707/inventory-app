@@ -1,8 +1,9 @@
 // All app state lives in one object persisted to localStorage on every change.
 // Shape:
-//   items:    [{ id, code, brand, category, name1, name2, size, orderUnit, vendor, remarks, img }]
+//   items:    [{ id, code, brand, category, name1, name2, size, orderUnit, vendor, remarks, noMore, img }]
 //             (id is internal; code is the user-facing "ID", shared by copies of the item under
-//             other vendors — code + vendor is unique; img is a photo stamp or '' — see images.js)
+//             other vendors — code + vendor is unique; noMore: boolean "no more" flag;
+//             img is a photo stamp or '' — see images.js)
 //   selected: { [itemId]: qty }
 //   orders:   [{ id, orderNo, vendor, createdAt, lines: [{ itemId, code, brand, name1, name2, size, orderUnit, qty }] }]  newest first
 //   daySeq:   { date: 'YYYYMMDD', n }  last order sequence number used on that date
@@ -12,6 +13,11 @@ const KEY = 'inventoryapp.v1';
 const listeners = [];
 
 export const ITEM_FIELDS = ['code', 'brand', 'category', 'name1', 'name2', 'size', 'orderUnit', 'vendor', 'remarks'];
+
+// noMore is a boolean, so it's kept out of ITEM_FIELDS (text fields) and handled on its own.
+export const NO_MORE_LABEL = 'No More';
+// CSV/user text → boolean: "Yes", "true", "1", "x", "y" count as checked.
+const toBool = (v) => v === true || /^(yes|y|true|1|x)$/i.test(String(v ?? '').trim());
 
 // Column headers used for CSV export (import also accepts these, see csv.js).
 export const FIELD_LABELS = {
@@ -106,6 +112,7 @@ const clean = (v) => String(v ?? '').trim();
 function normalize(item) {
   const out = { id: item.id || uid() };
   for (const f of ITEM_FIELDS) out[f] = clean(item[f]);
+  out.noMore = toBool(item.noMore);
   out.img = clean(item.img);
   return out;
 }

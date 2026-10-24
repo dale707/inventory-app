@@ -148,7 +148,7 @@ function renderInventory() {
     list.innerHTML = emptyState('No matches', 'Try a different vendor, search or category.');
   } else {
     list.innerHTML = shown.map((i) => `
-      <li class="row" data-id="${esc(i.id)}">
+      <li class="row${i.noMore ? ' no-more' : ''}" data-id="${esc(i.id)}">
         ${thumb(i)}
         <button class="row-main" data-action="edit">
           ${itemText(i.code, i.name1, i.name2, '')}
@@ -183,7 +183,7 @@ function renderSelected() {
     return;
   }
   list.innerHTML = rows.map(({ item, qty }) => `
-    <li class="row" data-id="${esc(item.id)}">
+    <li class="row${item.noMore ? ' no-more' : ''}" data-id="${esc(item.id)}">
       ${thumb(item)}
       <div class="row-main">
         ${itemText(item.code, item.name1, [item.name2, item.size].filter(Boolean).join(' · '),
@@ -280,6 +280,7 @@ async function openItemDialog(id) {
   $('#btn-delete-item').hidden = !item;
   $('#btn-copy-item').hidden = !item;
   for (const field of store.ITEM_FIELDS) itemForm.elements[field].value = item ? item[field] : '';
+  itemForm.elements.noMore.checked = !!item?.noMore;
   const v = view.inventoryVendor;
   if (!item && v !== ALL && v !== NONE) itemForm.elements.vendor.value = v;
   itemForm.elements.code.placeholder = item ? '' : `Auto: ${store.peekNextCode()}`;
@@ -327,6 +328,7 @@ itemForm.addEventListener('submit', async (e) => {
   const id = editingId ?? store.uid();
   const values = { id, img: store.getItem(id)?.img ?? '' };
   for (const field of store.ITEM_FIELDS) values[field] = f[field].value;
+  values.noMore = f.noMore.checked;
   const dup = values.code && store.findDuplicate(values.code, values.vendor, id);
   if (dup) {
     alert(`${dup.vendor ? `Vendor “${dup.vendor}”` : 'The “No vendor” list'} already has an item with ID ${dup.code} (“${dup.name1}”).`);
@@ -645,8 +647,8 @@ const menuActions = {
     const { items } = store.getState();
     if (!items.length) return toast('No inventory to export');
     saveFile(`inventory-${today()}.csv`, csvBlob(toCSV(
-      store.ITEM_FIELDS.map((f) => store.FIELD_LABELS[f]),
-      items.map((i) => store.ITEM_FIELDS.map((f) => i[f])))));
+      [...store.ITEM_FIELDS.map((f) => store.FIELD_LABELS[f]), store.NO_MORE_LABEL],
+      items.map((i) => [...store.ITEM_FIELDS.map((f) => i[f]), i.noMore ? 'Yes' : 'No']))));
   },
   // One ZIP of all photos named <ID>.jpg, so it can be re-imported with "Import photos".
   // Copies of an item under other vendors share its ID, so only the first photo per ID is kept.

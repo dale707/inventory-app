@@ -13,6 +13,7 @@ const COLUMNS = {
   vendor: ['vendor', 'vendor1', 'vendor 1', 'supplier', 'supplier1', 'supplier 1'],
   vendor2: ['vendor2', 'vendor 2', 'supplier2', 'supplier 2'], // older files: becomes a second row
   remarks: ['remarks', 'remark', 'notes', 'note', 'comments', 'comment'],
+  noMore: ['no more', 'nomore', 'discontinued'], // Yes/No
 };
 
 const normHeader = (h) => h.trim().toLowerCase().replace(/[\s_-]+/g, ' ');
@@ -55,7 +56,7 @@ export function rowsToItems(rows) {
     if (i >= 0) idx[key] = i;
   }
   if (idx.name1 === undefined && idx.code === undefined) {
-    return { error: 'No "Name1" or "ID" column found.\nExpected headers: ID, Brand, Category, Name1, Name2, Size, Order Unit, Vendor, Remarks' };
+    return { error: 'No "Name1" or "ID" column found.\nExpected headers: ID, Brand, Category, Name1, Name2, Size, Order Unit, Vendor, Remarks, No More' };
   }
 
   const items = [];

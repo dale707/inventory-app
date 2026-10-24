@@ -196,7 +196,7 @@ dialog.lightbox::backdrop { background: rgb(0 0 0 / .85); }
 }
 dialog input[readonly] { color: var(--muted); }
 .field-row label { flex: 1; min-width: 0; }
-.dialog-actions { display: flex; gap: 8px; margin-top: 8px; }
+.dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 .spacer { flex: 1; }
 
 /* Action sheet */
@@ -290,3 +290,13 @@ dialog select {
   .toolbar input { flex-basis: 100%; }
   .toolbar select { flex: 1; max-width: none; }
 }
+
+/* "No More" items: red row + a tag, so it isn't signalled by colour alone */
+.row.no-more { background: color-mix(in srgb, var(--danger) 24%, var(--surface)); }
+.row.no-more .row-title::after {
+  content: "No more"; margin-left: 8px; padding: 1px 6px; border-radius: 6px; vertical-align: 1px;
+  background: var(--danger); color: #fff; font-size: 11px; font-weight: 700; text-transform: uppercase;
+}
+.row.no-more .row-title { white-space: normal; }
+dialog label.check { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: 16px; }
+dialog label.check input { width: 22px; height: 22px; margin: 0; padding: 0; accent-color: var(--danger); }
