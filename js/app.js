@@ -20,7 +20,7 @@ const ALL = '\uE000all';
 const NONE = '\uE000none';
 const view = { inventoryVendor: ALL, historyVendor: ALL }; // which vendor each pane shows
 
-const itemVendors = (i) => [...new Set([i.vendor1, i.vendor2].filter(Boolean))]; // Vendor1 first
+const itemVendors = (i) => (i.vendor ? [i.vendor] : []);
 const inVendor = (vendors, key) =>
   key === ALL || (key === NONE ? !vendors.length : vendors.includes(key));
 const vendorLabel = (key) => (key === ALL ? 'All' : key === NONE ? 'No vendor' : key);
@@ -98,6 +98,22 @@ function vendorGroups(entries, all) {
   return groups;
 }
 
+// Empty values sort last; ties fall back to Name1, then ID.
+const sortItems = (field) => (a, b) =>
+  (!a[field] - !b[field]) || a[field].localeCompare(b[field]) ||
+  a.name1.localeCompare(b.name1) || a.code.localeCompare(b.code, undefined, { numeric: true });
+
+const DETAIL_FIELDS = [['brand', 'Brand'], ['category', 'Category'], ['size', 'Size'], ['orderUnit', 'Order Unit']];
+
+// Labelled item fields shown in full in Inventory rows (Remarks on its own wrapping line).
+function itemDetails(i, withVendor) {
+  const fields = [...DETAIL_FIELDS, ...(withVendor ? [['vendor', 'Vendor']] : [])]
+    .filter(([f]) => i[f])
+    .map(([f, label]) => `<span class="detail"><span class="detail-label">${label}</span>${esc(i[f])}</span>`).join('');
+  return (fields ? `<span class="details">${fields}</span>` : '') +
+    (i.remarks ? `<span class="remarks"><span class="detail-label">Remarks</span>${esc(i.remarks)}</span>` : '');
+}
+
 function renderInventory() {
   const { items, selected } = store.getState();
 
@@ -109,10 +125,10 @@ function renderInventory() {
   $('#category-list').innerHTML = datalist(cats);
   $('#brand-list').innerHTML = datalist(uniqueSorted(items.map((i) => i.brand)));
   $('#unit-list').innerHTML = datalist(uniqueSorted(items.map((i) => i.orderUnit)));
-  $('#vendor-list').innerHTML = datalist(uniqueSorted(items.flatMap((i) => [i.vendor1, i.vendor2])));
+  $('#vendor-list').innerHTML = datalist(uniqueSorted(items.map((i) => i.vendor)));
 
   const q = $('#search').value.trim().toLowerCase();
-  const matches = (i) => [i.name1, i.name2, i.remarks, i.vendor1, i.vendor2, i.code, i.brand]
+  const matches = (i) => [i.name1, i.name2, i.remarks, i.vendor, i.code, i.brand]
     .some((v) => v.toLowerCase().includes(q));
   const withVendors = (list) => list.map((i) => ({ item: i, vendors: itemVendors(i) }));
   // Vendor counts follow the search/category filter, so it's clear where the matches are.
@@ -122,7 +138,7 @@ function renderInventory() {
   const shown = filtered
     .filter((e) => inVendor(e.vendors, vendor))
     .map((e) => e.item)
-    .sort((a, b) => a.name1.localeCompare(b.name1));
+    .sort(sortItems($('#sort-by').value));
 
   $('#inventory-heading').textContent = items.length ? `${vendorLabel(vendor)} · ${plural(shown.length, 'item')}` : '';
   const list = $('#inventory-list');
@@ -135,8 +151,8 @@ function renderInventory() {
       <li class="row" data-id="${esc(i.id)}">
         ${thumb(i)}
         <button class="row-main" data-action="edit">
-          ${itemText(i.code, i.name1, [i.name2, i.size].filter(Boolean).join(' · '),
-            joinDot([i.brand, i.category, vendor === ALL && itemVendors(i).join(' / ')]))}
+          ${itemText(i.code, i.name1, i.name2, '')}
+          ${itemDetails(i, vendor === ALL)}
         </button>
         ${stepper(selected[i.id] || 0)}
       </li>`).join('');
@@ -171,7 +187,7 @@ function renderSelected() {
       ${thumb(item)}
       <div class="row-main">
         ${itemText(item.code, item.name1, [item.name2, item.size].filter(Boolean).join(' · '),
-          joinDot([item.brand, item.orderUnit && `per ${item.orderUnit}`, itemVendors(item).join(' / ')]))}
+          joinDot([item.brand, item.orderUnit && `per ${item.orderUnit}`, item.vendor]))}
       </div>
       ${stepper(qty)}
     </li>`).join('');
@@ -262,9 +278,10 @@ async function openItemDialog(id) {
   editingId = item?.id ?? null;
   $('#item-dialog-title').textContent = item ? 'Edit Item' : 'Add Item';
   $('#btn-delete-item').hidden = !item;
+  $('#btn-copy-item').hidden = !item;
   for (const field of store.ITEM_FIELDS) itemForm.elements[field].value = item ? item[field] : '';
   const v = view.inventoryVendor;
-  if (!item && v !== ALL && v !== NONE) itemForm.elements.vendor1.value = v;
+  if (!item && v !== ALL && v !== NONE) itemForm.elements.vendor.value = v;
   itemForm.elements.code.placeholder = item ? '' : `Auto: ${store.peekNextCode()}`;
   resetPhoto();
   showPhoto(null);
@@ -272,11 +289,16 @@ async function openItemDialog(id) {
   if (item?.img) showPhoto(await images.imageUrl(item.id, item.img));
 }
 
+// "Take photo" uses an input with capture="environment", which opens the camera directly on
+// phones/iPads; "Choose photo" (and tapping the preview) opens the photo library/files.
+const cameraInput = $('#camera-input');
 $('#photo-preview').addEventListener('click', () => photoInput.click());
+$('#btn-photo-library').addEventListener('click', () => photoInput.click());
+$('#btn-photo-camera').addEventListener('click', () => cameraInput.click());
 
-photoInput.addEventListener('change', async () => {
-  const file = photoInput.files[0];
-  photoInput.value = '';
+async function onPhotoPicked(input) {
+  const file = input.files[0];
+  input.value = '';
   if (!file) return;
   try {
     const blob = await images.resizeImage(file);
@@ -287,7 +309,9 @@ photoInput.addEventListener('change', async () => {
   } catch {
     alert('That file could not be read as an image.');
   }
-});
+}
+photoInput.addEventListener('change', () => onPhotoPicked(photoInput));
+cameraInput.addEventListener('change', () => onPhotoPicked(cameraInput));
 
 $('#btn-photo-remove').addEventListener('click', () => {
   resetPhoto();
@@ -303,6 +327,11 @@ itemForm.addEventListener('submit', async (e) => {
   const id = editingId ?? store.uid();
   const values = { id, img: store.getItem(id)?.img ?? '' };
   for (const field of store.ITEM_FIELDS) values[field] = f[field].value;
+  const dup = values.code && store.findDuplicate(values.code, values.vendor, id);
+  if (dup) {
+    alert(`${dup.vendor ? `Vendor “${dup.vendor}”` : 'The “No vendor” list'} already has an item with ID ${dup.code} (“${dup.name1}”).`);
+    return f.vendor.focus();
+  }
   try {
     if (photo.blob) {
       await images.putImage(id, photo.blob);
@@ -332,6 +361,47 @@ $('#btn-delete-item').addEventListener('click', () => {
   }
 });
 
+// ---------- Copy item to another vendor ----------
+
+const copyDialog = $('#copy-dialog');
+const copyForm = $('#copy-form');
+
+async function copyPhoto(fromId, toId) {
+  const blob = await images.getImage(fromId);
+  if (!blob) return;
+  await images.putImage(toId, blob);
+  store.setImageStamps({ [toId]: images.newStamp() });
+}
+
+$('#btn-copy-item').addEventListener('click', () => {
+  const item = store.getItem(editingId);
+  if (!item) return;
+  const { items } = store.getState();
+  const taken = new Set(items.filter((i) => i.code === item.code).map((i) => i.vendor.toLowerCase()));
+  $('#copy-vendor-list').innerHTML = datalist(uniqueSorted(items.map((i) => i.vendor)).filter((v) => !taken.has(v.toLowerCase())));
+  $('#copy-summary').innerHTML = `<span class="row-id">${esc(item.code)}</span>${esc(item.name1)}` +
+    (item.vendor ? ` — now under ${esc(item.vendor)}` : '');
+  copyForm.elements.vendor.value = '';
+  copyDialog.showModal();
+});
+
+$('#btn-cancel-copy').addEventListener('click', () => copyDialog.close());
+
+copyForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const vendor = copyForm.elements.vendor.value.trim();
+  const item = store.getItem(editingId);
+  if (!vendor || !item) return;
+  const copy = store.copyItemToVendor(item.id, vendor);
+  if (!copy) return alert(`“${vendor}” already has an item with ID ${item.code}.`);
+  copyDialog.close();
+  itemDialog.close();
+  if (item.img) await copyPhoto(item.id, copy.id).catch(() => toast('Copied, but the photo could not be copied'));
+  view.inventoryVendor = copy.vendor;
+  render();
+  toast(`Copied ${copy.code} “${copy.name1}” to ${copy.vendor}`);
+});
+
 // ---------- Full-size photo ----------
 
 const imageDialog = $('#image-dialog');
@@ -358,8 +428,8 @@ $('#btn-save-photo').addEventListener('click', async () => {
 
 // ---------- Place order dialog ----------
 
-// Each selected line gets a vendor (default: the item's Vendor1, or the vendor open in the
-// Inventory pane if the item has it). Lines are grouped into one order per vendor.
+// Each selected line gets a vendor (default: the item's own). Lines are grouped into one
+// order per vendor.
 const orderDialog = $('#order-dialog');
 const orderForm = $('#order-form');
 const vendorAll = $('#order-vendor-all');
@@ -408,8 +478,7 @@ function updateOrderPreview() {
 $('#btn-place-order').addEventListener('click', () => {
   const rows = selectedRows();
   if (!rows.length) return;
-  const open = view.inventoryVendor;
-  orderVendors = uniqueSorted(store.getState().items.flatMap((i) => [i.vendor1, i.vendor2]));
+  orderVendors = uniqueSorted(store.getState().items.map((i) => i.vendor));
   $('#order-summary').textContent = selectionSummary(rows);
   $('#order-lines').innerHTML = rows.map(({ item, qty }) => `
     <li data-id="${esc(item.id)}">
@@ -417,10 +486,7 @@ $('#btn-place-order').addEventListener('click', () => {
         <small>Qty ${fmtQty(qty)}${item.orderUnit ? ' × ' + esc(item.orderUnit) : ''}</small></span>
       <select aria-label="Vendor for ${esc(item.name1)}"></select>
     </li>`).join('');
-  for (const sel of lineSelects()) {
-    const own = itemVendors(store.getItem(sel.closest('[data-id]').dataset.id));
-    setLineVendor(sel, own.includes(open) ? open : own[0] || '');
-  }
+  for (const sel of lineSelects()) setLineVendor(sel, store.getItem(sel.closest('[data-id]').dataset.id).vendor);
   updateOrderPreview();
   orderDialog.showModal();
 });
@@ -542,10 +608,10 @@ const csvDate = (iso) => {
 const today = () => localDay(new Date()); // for export file names
 
 const ordersCsv = (orders) => csvBlob(toCSV(
-  ['Order No', 'Vendor', 'Date', 'ID', 'Brand', 'Name1', 'Name2', 'Size', 'Qty', 'Order Unit', 'Vendor1', 'Vendor2'],
+  ['Order No', 'Vendor', 'Date', 'ID', 'Brand', 'Name1', 'Name2', 'Size', 'Qty', 'Order Unit'],
   orders.flatMap((o) => o.lines.map((l) => [
     o.orderNo, o.vendor, csvDate(o.createdAt), l.code, l.brand, l.name1, l.name2, l.size,
-    l.qty, l.orderUnit, l.vendor1, l.vendor2,
+    l.qty, l.orderUnit,
   ]))));
 
 const safeFileName = (s) => s.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'photo';
@@ -583,6 +649,7 @@ const menuActions = {
       items.map((i) => store.ITEM_FIELDS.map((f) => i[f])))));
   },
   // One ZIP of all photos named <ID>.jpg, so it can be re-imported with "Import photos".
+  // Copies of an item under other vendors share its ID, so only the first photo per ID is kept.
   'export-photos': async () => {
     const withPhotos = store.getState().items.filter((i) => i.img);
     if (!withPhotos.length) return toast('No photos to export');
@@ -593,6 +660,7 @@ const menuActions = {
       const blob = await images.getImage(item.id).catch(() => null);
       if (!blob) continue;
       const base = safeFileName(item.code || item.name1);
+      if (item.code && used.has(`${base}.jpg`.toLowerCase())) continue;
       let name = `${base}.jpg`;
       for (let n = 2; used.has(name.toLowerCase()); n++) name = `${base}_${n}.jpg`;
       used.add(name.toLowerCase());
@@ -653,30 +721,35 @@ csvInput.addEventListener('change', async () => {
   toast(`Imported: ${added} added, ${updated} updated`);
 });
 
-// Matches each photo to an item by file name: "BOX-S.jpg" → item with ID BOX-S (or Name1 "BOX-S").
+// Matches each photo to items by file name: "BOX-S.jpg" → every item with ID BOX-S (all
+// vendors), or else Name1 "BOX-S".
 photosBulkInput.addEventListener('change', async () => {
   const files = [...photosBulkInput.files];
   photosBulkInput.value = '';
   if (!files.length) return;
   const { items } = store.getState();
-  const byCode = new Map(items.filter((i) => i.code).map((i) => [i.code.toLowerCase(), i]));
-  const byName = new Map(items.map((i) => [i.name1.toLowerCase(), i]));
+  const group = (key) => items.reduce((m, i) => m.set(key(i), [...(m.get(key(i)) || []), i]), new Map());
+  const byCode = group((i) => i.code.toLowerCase());
+  const byName = group((i) => i.name1.toLowerCase());
   const stamps = {};
   const unmatched = [];
   toast(`Importing ${files.length} photo(s)…`);
   for (const file of files) {
     const base = file.name.replace(/\.[^.]+$/, '').trim().toLowerCase();
-    const item = byCode.get(base) || byName.get(base);
-    if (!item) { unmatched.push(file.name); continue; }
+    const matched = byCode.get(base) || byName.get(base);
+    if (!matched) { unmatched.push(file.name); continue; }
     try {
-      await images.putImage(item.id, await images.resizeImage(file));
-      stamps[item.id] = images.newStamp();
+      const blob = await images.resizeImage(file);
+      for (const item of matched) {
+        await images.putImage(item.id, blob);
+        stamps[item.id] = images.newStamp();
+      }
     } catch {
       unmatched.push(file.name);
     }
   }
   store.setImageStamps(stamps);
-  const done = Object.keys(stamps).length;
+  const done = files.length - unmatched.length;
   if (unmatched.length) {
     const shown = unmatched.slice(0, 10).join('\n');
     const more = unmatched.length > 10 ? `\n…and ${unmatched.length - 10} more` : '';
@@ -692,6 +765,19 @@ document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () 
 $('#btn-add').addEventListener('click', () => openItemDialog(null));
 $('#search').addEventListener('input', () => { renderInventory(); loadThumbs(); });
 $('#category-filter').addEventListener('change', () => { renderInventory(); loadThumbs(); });
+
+const SORT_KEY = 'inventoryapp.sort'; // per-device convenience only
+const sortBy = $('#sort-by');
+try { sortBy.value = localStorage.getItem(SORT_KEY) || 'name1'; } catch {}
+if (!sortBy.value) sortBy.value = 'name1';
+sortBy.addEventListener('change', () => {
+  try { localStorage.setItem(SORT_KEY, sortBy.value); } catch {}
+  renderInventory();
+  loadThumbs();
+});
+
+// Items split per vendor by migrate() still need their photo copied.
+for (const { from, to } of store.takePendingPhotoCopies()) copyPhoto(from, to).catch(() => {});
 
 store.onChange(render);
 render();

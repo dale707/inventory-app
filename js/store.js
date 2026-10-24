@@ -1,21 +1,22 @@
 // All app state lives in one object persisted to localStorage on every change.
 // Shape:
-//   items:    [{ id, code, brand, category, name1, name2, size, orderUnit, vendor1, vendor2, remarks, img }]
-//             (id is internal; code is the user-facing "ID"; img is a photo stamp or '' — see images.js)
+//   items:    [{ id, code, brand, category, name1, name2, size, orderUnit, vendor, remarks, img }]
+//             (id is internal; code is the user-facing "ID", shared by copies of the item under
+//             other vendors — code + vendor is unique; img is a photo stamp or '' — see images.js)
 //   selected: { [itemId]: qty }
-//   orders:   [{ id, orderNo, vendor, createdAt, lines: [{ itemId, code, brand, name1, name2, size, orderUnit, vendor1, vendor2, qty }] }]  newest first
+//   orders:   [{ id, orderNo, vendor, createdAt, lines: [{ itemId, code, brand, name1, name2, size, orderUnit, qty }] }]  newest first
 //   daySeq:   { date: 'YYYYMMDD', n }  last order sequence number used on that date
 //   codeSeq:  last number used for auto-assigned item IDs (0001, 0002, ...)
 
 const KEY = 'inventoryapp.v1';
 const listeners = [];
 
-export const ITEM_FIELDS = ['code', 'brand', 'category', 'name1', 'name2', 'size', 'orderUnit', 'vendor1', 'vendor2', 'remarks'];
+export const ITEM_FIELDS = ['code', 'brand', 'category', 'name1', 'name2', 'size', 'orderUnit', 'vendor', 'remarks'];
 
 // Column headers used for CSV export (import also accepts these, see csv.js).
 export const FIELD_LABELS = {
   code: 'ID', brand: 'Brand', category: 'Category', name1: 'Name1', name2: 'Name2',
-  size: 'Size', orderUnit: 'Order Unit', vendor1: 'Vendor1', vendor2: 'Vendor2', remarks: 'Remarks',
+  size: 'Size', orderUnit: 'Order Unit', vendor: 'Vendor', remarks: 'Remarks',
 };
 
 const emptyState = () => ({ items: [], selected: {}, orders: [], daySeq: { date: '', n: 0 }, codeSeq: 0 });
@@ -36,11 +37,20 @@ function load() {
 
 // Upgrades saved data from earlier versions: v1 fields (sku/name/unit/qty, numeric order
 // numbers), items saved before IDs were auto-assigned, and orders from before vendors
-// replaced the free-text prefix (the old prefix becomes the order's vendor).
+// replaced the free-text prefix (the old prefix becomes the order's vendor). Items with
+// Vendor1 + Vendor2 become one item per vendor with the same ID; the copies' photos are
+// duplicated later by the app (see takePendingPhotoCopies).
 function migrate(s) {
-  s.items = s.items.map((i) => ('name1' in i ? normalize(i) : normalize({
-    id: i.id, code: i.sku, category: i.category, name1: i.name, orderUnit: i.unit,
-  })));
+  s.items = s.items.flatMap((i) => {
+    if (!('name1' in i)) return [normalize({ id: i.id, code: i.sku, category: i.category, name1: i.name, orderUnit: i.unit })];
+    if ('vendor' in i) return [normalize(i)];
+    migrated = true;
+    const first = normalize({ ...i, vendor: i.vendor1 || i.vendor2 });
+    if (!i.vendor2 || i.vendor2 === first.vendor) return [first];
+    const copy = normalize({ ...i, id: uid(), vendor: i.vendor2, img: '' });
+    if (first.img) pendingPhotoCopies.push({ from: first.id, to: copy.id });
+    return [first, copy];
+  });
   s.orders = s.orders.map((o) => ('orderNo' in o ? o : {
     id: o.id,
     orderNo: String(o.number),
@@ -55,6 +65,11 @@ function migrate(s) {
   for (const i of s.items) if (!i.code) i.code = assignCode(s);
   return s;
 }
+
+let migrated = false; // migrate() changed the saved shape; save it once loaded
+const pendingPhotoCopies = [];
+// Photo copies migrate() couldn't do itself (IndexedDB is async): [{ from, to }] item ids.
+export const takePendingPhotoCopies = () => pendingPhotoCopies.splice(0);
 
 const codeTaken = (s, code) => s.items.some((i) => i.code.toLowerCase() === code.toLowerCase());
 
@@ -97,11 +112,18 @@ function normalize(item) {
 
 // Must come after the helpers above: load() uses them while migrating.
 let state = load();
+// Save migrated data now, so item ids created by the split are stable across launches.
+if (migrated) try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
 
 export const getState = () => state;
 export const onChange = (fn) => listeners.push(fn);
 export const getItem = (id) => state.items.find((i) => i.id === id);
 export const peekNextCode = () => nextFreeCode(state).code;
+const same = (a, b) => a.toLowerCase() === b.toLowerCase();
+
+// The item (other than exceptId) that already has this ID under this vendor, if any.
+export const findDuplicate = (code, vendor, exceptId) => state.items.find((i) =>
+  i.id !== exceptId && same(i.code, clean(code)) && same(i.vendor, clean(vendor)));
 
 export function saveItem(item) {
   const next = normalize(item);
@@ -127,24 +149,36 @@ export function deleteItem(id) {
   commit();
 }
 
-// Merge CSV rows into inventory: match by ID (code) when present, otherwise by Name1.
+// Copies an item to another vendor, keeping its ID. Returns the copy, or null if that
+// vendor already has an item with this ID. The caller copies the photo.
+export function copyItemToVendor(id, vendor) {
+  const item = getItem(id);
+  if (!item || !clean(vendor) || findDuplicate(item.code, vendor)) return null;
+  const copy = normalize({ ...item, id: uid(), vendor, img: '' });
+  state.items.push(copy);
+  commit();
+  return copy;
+}
+
+// Merge CSV rows into inventory: match by ID (code) when present, otherwise by Name1. If the
+// row has a Vendor, only that vendor's item matches (an ID under a new vendor adds a copy);
+// without one, every item with that ID/Name1 is updated.
 export function importItems(rows) {
   let added = 0, updated = 0;
-  const byCode = new Map(state.items.filter((i) => i.code).map((i) => [i.code.toLowerCase(), i]));
-  const byName = new Map(state.items.map((i) => [i.name1.toLowerCase(), i]));
   for (const r of rows) {
-    const existing = r.code ? byCode.get(r.code.toLowerCase()) : byName.get(r.name1.toLowerCase());
-    if (existing) {
+    const matches = state.items.filter((i) =>
+      (r.code ? same(i.code, r.code) : same(i.name1, r.name1)) && (r.vendor === undefined || same(i.vendor, r.vendor)));
+    for (const existing of matches) {
       Object.assign(existing, normalize({ ...existing, ...r, code: existing.code || r.code }));
       updated++;
-    } else {
-      const item = normalize({ ...r, name1: r.name1 || r.code });
-      if (!item.code) item.code = assignCode(state);
-      state.items.push(item);
-      if (item.code) byCode.set(item.code.toLowerCase(), item);
-      byName.set(item.name1.toLowerCase(), item);
-      added++;
     }
+    if (matches.length) continue;
+    // A known Name1 under a new vendor keeps that item's ID, like a copy.
+    const sibling = !r.code && state.items.find((i) => same(i.name1, r.name1));
+    const item = normalize({ ...r, name1: r.name1 || r.code, code: r.code || sibling?.code });
+    if (!item.code) item.code = assignCode(state);
+    state.items.push(item);
+    added++;
   }
   commit();
   return { added, updated };
@@ -190,7 +224,7 @@ export function placeOrder(vendorByItem) {
     if (!groups.has(vendor)) groups.set(vendor, []);
     groups.get(vendor).push({
       itemId, code: it.code, brand: it.brand, name1: it.name1, name2: it.name2, size: it.size,
-      orderUnit: it.orderUnit, vendor1: it.vendor1, vendor2: it.vendor2, qty,
+      orderUnit: it.orderUnit, qty,
     });
     delete state.selected[itemId];
   }

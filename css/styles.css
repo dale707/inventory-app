@@ -275,3 +275,18 @@ dialog select {
 .order-preview strong { word-break: break-all; }
 .order-preview span { color: var(--muted); white-space: nowrap; }
 .order-preview .warn { color: var(--danger); }
+
+/* Inventory rows show every field */
+.details { display: flex; flex-wrap: wrap; gap: 2px 14px; margin-top: 2px; font-size: 14px; }
+.detail-label { margin-right: 4px; color: var(--muted); font-size: 12px; }
+.remarks { font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere; }
+#inventory-list .row-sub { white-space: normal; }
+.toolbar select { max-width: 30%; }
+
+/* Photo picker in the item dialog */
+.photo-buttons { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+@media (max-width: 699px) {
+  .toolbar { flex-wrap: wrap; }
+  .toolbar input { flex-basis: 100%; }
+  .toolbar select { flex: 1; max-width: none; }
+}

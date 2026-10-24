@@ -34,6 +34,12 @@
         <div class="toolbar">
           <input id="search" type="search" placeholder="Search" autocomplete="off" enterkeyhint="search">
           <select id="category-filter" aria-label="Category"></select>
+          <select id="sort-by" aria-label="Sort by">
+            <option value="name1">Sort: Name1</option>
+            <option value="name2">Sort: Name2</option>
+            <option value="brand">Sort: Brand</option>
+            <option value="category">Sort: Category</option>
+          </select>
         </div>
         <h2 id="inventory-heading" class="pane-title"></h2>
         <ul id="inventory-list" class="list"></ul>
@@ -82,7 +88,11 @@
           <img alt="" hidden>
           <span>Add photo</span>
         </button>
-        <button type="button" id="btn-photo-remove" class="btn small danger">Remove photo</button>
+        <div class="photo-buttons">
+          <button type="button" id="btn-photo-camera" class="btn small">Take photo</button>
+          <button type="button" id="btn-photo-library" class="btn small">Choose photo</button>
+          <button type="button" id="btn-photo-remove" class="btn small danger">Remove photo</button>
+        </div>
       </div>
       <div class="field-row">
         <label>ID<input name="code" readonly tabindex="-1"></label>
@@ -95,13 +105,11 @@
         <label>Size<input name="size" autocomplete="off"></label>
         <label>Order Unit<input name="orderUnit" list="unit-list" placeholder="e.g. box, case" autocomplete="off"></label>
       </div>
-      <div class="field-row">
-        <label>Vendor1<input name="vendor1" list="vendor-list" autocomplete="off"></label>
-        <label>Vendor2<input name="vendor2" list="vendor-list" autocomplete="off"></label>
-      </div>
+      <label>Vendor<input name="vendor" list="vendor-list" autocomplete="off"></label>
       <label>Remarks<textarea name="remarks" rows="2"></textarea></label>
       <div class="dialog-actions">
         <button type="button" id="btn-delete-item" class="btn danger">Delete</button>
+        <button type="button" id="btn-copy-item" class="btn">Copy to vendor</button>
         <span class="spacer"></span>
         <button type="button" id="btn-cancel-item" class="btn">Cancel</button>
         <button type="submit" class="btn primary">Save</button>
@@ -112,6 +120,21 @@
   <datalist id="brand-list"></datalist>
   <datalist id="unit-list"></datalist>
   <datalist id="vendor-list"></datalist>
+
+  <dialog id="copy-dialog">
+    <form id="copy-form">
+      <h2>Copy to Vendor</h2>
+      <p id="copy-summary" class="dialog-note"></p>
+      <label>Vendor<input name="vendor" list="copy-vendor-list" required autocomplete="off" enterkeyhint="done"></label>
+      <datalist id="copy-vendor-list"></datalist>
+      <p class="dialog-note">The copy keeps the same ID and photo. It can be edited separately afterwards.</p>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" id="btn-cancel-copy" class="btn">Cancel</button>
+        <button type="submit" class="btn primary">Copy</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="order-dialog" class="wide">
     <form id="order-form">
@@ -154,6 +177,7 @@
 
   <input type="file" id="csv-input" accept=".csv,text/csv,text/plain" hidden>
   <input type="file" id="photo-input" accept="image/*" hidden>
+  <input type="file" id="camera-input" accept="image/*" capture="environment" hidden>
   <input type="file" id="photos-bulk-input" accept="image/*" multiple hidden>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
