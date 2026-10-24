@@ -219,3 +219,59 @@ dialog.sheet {
   transition: opacity .2s, transform .2s;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* Vendor split view (Inventory, History): vendor list on the left, its items on the right.
+   On narrow screens the vendor list becomes a scrolling row of chips above the list. */
+:root { --topbar-h: calc(env(safe-area-inset-top) + 60px); }
+.view.split.active { display: grid; grid-template-columns: minmax(180px, 260px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.pane { min-width: 0; }
+.pane-title { margin: 0 0 8px 4px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.pane-title:empty { display: none; }
+.vendor-pane {
+  position: sticky; top: var(--topbar-h);
+  max-height: calc(100dvh - var(--topbar-h) - var(--tabbar-h) - env(safe-area-inset-bottom) - 16px);
+  overflow-y: auto; margin-top: 4px;
+  background: var(--surface); border-radius: var(--radius);
+}
+.vendor-pane:empty { display: none; }
+.vendor {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 48px; padding: 8px 14px;
+  border: 0; border-radius: 0; background: none; text-align: left;
+}
+.vendor + .vendor { border-top: 1px solid var(--border); }
+.vendor span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vendor b { color: var(--muted); font-size: 13px; font-weight: 500; }
+.vendor.special span { font-style: italic; }
+.vendor.active { background: var(--accent); color: var(--accent-text); }
+.vendor.active b { color: inherit; }
+
+@media (max-width: 699px) {
+  .view.split.active { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .vendor-pane {
+    position: static; max-height: none; display: flex; gap: 8px; overflow-x: auto;
+    margin: 4px 0 8px; padding-bottom: 4px; background: none; border-radius: 0;
+  }
+  .vendor, .vendor + .vendor {
+    width: auto; flex-shrink: 0; min-height: 36px; padding: 0 14px;
+    border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+  }
+  .vendor span { overflow: visible; }
+  .vendor.active { background: var(--accent); border-color: var(--accent); }
+}
+
+/* Place-order vendor assignment */
+dialog.wide { width: min(600px, calc(100% - 32px)); }
+dialog select {
+  display: block; width: 100%; height: 44px; margin-top: 4px; padding: 0 12px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text);
+}
+.assign-list { list-style: none; margin: 0 0 12px; padding: 0; max-height: 45dvh; overflow-y: auto; }
+.assign-list li { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); }
+.assign-item { flex: 1; min-width: 0; font-size: 15px; }
+.assign-item small { display: block; color: var(--muted); }
+.assign-list select { width: 45%; flex-shrink: 0; margin: 0; }
+.order-preview { list-style: none; margin: 0 0 12px; padding: 0; font-size: 15px; }
+.order-preview li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
+.order-preview strong { word-break: break-all; }
+.order-preview span { color: var(--muted); white-space: nowrap; }
+.order-preview .warn { color: var(--danger); }

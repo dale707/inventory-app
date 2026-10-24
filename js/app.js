@@ -15,6 +15,16 @@ const datalist = (values) => values.map((v) => `<option value="${esc(v)}">`).joi
 
 const TITLES = { inventory: 'Inventory', selected: 'Selected', history: 'Order History' };
 
+// Vendor pane keys besides real vendor names.
+const ALL = '\uE000all';
+const NONE = '\uE000none';
+const view = { inventoryVendor: ALL, historyVendor: ALL }; // which vendor each pane shows
+
+const itemVendors = (i) => [...new Set([i.vendor1, i.vendor2].filter(Boolean))]; // Vendor1 first
+const inVendor = (vendors, key) =>
+  key === ALL || (key === NONE ? !vendors.length : vendors.includes(key));
+const vendorLabel = (key) => (key === ALL ? 'All' : key === NONE ? 'No vendor' : key);
+
 // ---------- Tabs ----------
 
 function showTab(tab) {
@@ -68,6 +78,26 @@ function itemText(code, name1, name2, meta) {
     ${meta ? `<span class="row-sub2">${meta}</span>` : ''}`;
 }
 
+// Left-pane vendor list. groups: [{ key, count }]. Returns the key that is actually shown
+// (falls back to All when the remembered vendor no longer exists).
+function renderVendorPane(el, groups, current) {
+  const key = groups.some((g) => g.key === current) ? current : ALL;
+  el.innerHTML = groups.map((g) => `
+    <button class="vendor${g.key === key ? ' active' : ''}${g.key === ALL || g.key === NONE ? ' special' : ''}"
+      data-vendor="${esc(g.key)}" aria-pressed="${g.key === key}">
+      <span>${esc(vendorLabel(g.key))}</span><b>${fmtQty(g.count)}</b>
+    </button>`).join('');
+  return key;
+}
+
+function vendorGroups(entries, all) {
+  const vendors = uniqueSorted(entries.flatMap((e) => e.vendors));
+  const count = (key) => entries.filter((e) => inVendor(e.vendors, key)).length;
+  const groups = [{ key: ALL, count: count(ALL) }, ...vendors.map((v) => ({ key: v, count: count(v) }))];
+  if (all.some((e) => !e.vendors.length)) groups.push({ key: NONE, count: count(NONE) });
+  return groups;
+}
+
 function renderInventory() {
   const { items, selected } = store.getState();
 
@@ -84,21 +114,29 @@ function renderInventory() {
   const q = $('#search').value.trim().toLowerCase();
   const matches = (i) => [i.name1, i.name2, i.remarks, i.vendor1, i.vendor2, i.code, i.brand]
     .some((v) => v.toLowerCase().includes(q));
-  const shown = items
-    .filter((i) => (!cat || i.category === cat) && (!q || matches(i)))
+  const withVendors = (list) => list.map((i) => ({ item: i, vendors: itemVendors(i) }));
+  // Vendor counts follow the search/category filter, so it's clear where the matches are.
+  const filtered = withVendors(items.filter((i) => (!cat || i.category === cat) && (!q || matches(i))));
+  const vendor = view.inventoryVendor =
+    renderVendorPane($('#inventory-vendors'), vendorGroups(filtered, withVendors(items)), view.inventoryVendor);
+  const shown = filtered
+    .filter((e) => inVendor(e.vendors, vendor))
+    .map((e) => e.item)
     .sort((a, b) => a.name1.localeCompare(b.name1));
 
+  $('#inventory-heading').textContent = items.length ? `${vendorLabel(vendor)} · ${plural(shown.length, 'item')}` : '';
   const list = $('#inventory-list');
   if (!items.length) {
     list.innerHTML = emptyState('No inventory yet', 'Tap + to add an item, or ⋯ → Import inventory from CSV.');
   } else if (!shown.length) {
-    list.innerHTML = emptyState('No matches', 'Try a different search or category.');
+    list.innerHTML = emptyState('No matches', 'Try a different vendor, search or category.');
   } else {
     list.innerHTML = shown.map((i) => `
       <li class="row" data-id="${esc(i.id)}">
         ${thumb(i)}
         <button class="row-main" data-action="edit">
-          ${itemText(i.code, i.name1, [i.name2, i.size].filter(Boolean).join(' · '), joinDot([i.brand, i.category]))}
+          ${itemText(i.code, i.name1, [i.name2, i.size].filter(Boolean).join(' · '),
+            joinDot([i.brand, i.category, vendor === ALL && itemVendors(i).join(' / ')]))}
         </button>
         ${stepper(selected[i.id] || 0)}
       </li>`).join('');
@@ -133,7 +171,7 @@ function renderSelected() {
       ${thumb(item)}
       <div class="row-main">
         ${itemText(item.code, item.name1, [item.name2, item.size].filter(Boolean).join(' · '),
-          joinDot([item.brand, item.orderUnit && `per ${item.orderUnit}`]))}
+          joinDot([item.brand, item.orderUnit && `per ${item.orderUnit}`, itemVendors(item).join(' / ')]))}
       </div>
       ${stepper(qty)}
     </li>`).join('');
@@ -143,11 +181,16 @@ function renderSelected() {
 function renderHistory() {
   const { orders } = store.getState();
   const list = $('#history-list');
+  const entries = orders.map((o) => ({ order: o, vendors: o.vendor ? [o.vendor] : [] }));
+  const vendor = view.historyVendor =
+    renderVendorPane($('#history-vendors'), vendorGroups(entries, entries), view.historyVendor);
+  const shown = entries.filter((e) => inVendor(e.vendors, vendor)).map((e) => e.order);
+  $('#history-heading').textContent = orders.length ? `${vendorLabel(vendor)} · ${plural(shown.length, 'order')}` : '';
   if (!orders.length) {
     list.innerHTML = emptyState('No orders yet', 'Orders you place from the Selected tab show up here.');
     return;
   }
-  list.innerHTML = orders.map((o) => {
+  list.innerHTML = shown.map((o) => {
     const units = o.lines.reduce((s, l) => s + l.qty, 0);
     return `<li class="order" data-id="${esc(o.id)}">
       <details>
@@ -220,6 +263,8 @@ async function openItemDialog(id) {
   $('#item-dialog-title').textContent = item ? 'Edit Item' : 'Add Item';
   $('#btn-delete-item').hidden = !item;
   for (const field of store.ITEM_FIELDS) itemForm.elements[field].value = item ? item[field] : '';
+  const v = view.inventoryVendor;
+  if (!item && v !== ALL && v !== NONE) itemForm.elements.vendor1.value = v;
   itemForm.elements.code.placeholder = item ? '' : `Auto: ${store.peekNextCode()}`;
   resetPhoto();
   showPhoto(null);
@@ -313,34 +358,105 @@ $('#btn-save-photo').addEventListener('click', async () => {
 
 // ---------- Place order dialog ----------
 
+// Each selected line gets a vendor (default: the item's Vendor1, or the vendor open in the
+// Inventory pane if the item has it). Lines are grouped into one order per vendor.
 const orderDialog = $('#order-dialog');
 const orderForm = $('#order-form');
-const prefixInput = orderForm.elements.prefix;
+const vendorAll = $('#order-vendor-all');
+const NEW_VENDOR = '\uE000new';
+let orderVendors = []; // every known vendor, plus any typed in this dialog
+
+const vendorOptions = (own, value) => {
+  const opt = (v) => `<option value="${esc(v)}"${v === value ? ' selected' : ''}>${esc(v)}</option>`;
+  const others = orderVendors.filter((v) => !own.includes(v));
+  return (value ? '' : '<option value="" selected disabled>Choose vendor…</option>') +
+    own.map(opt).join('') +
+    (others.length ? `<optgroup label="${own.length ? 'Other vendors' : 'Vendors'}">${others.map(opt).join('')}</optgroup>` : '') +
+    `<option value="${NEW_VENDOR}">New vendor…</option>`;
+};
+
+const lineSelects = () => [...orderDialog.querySelectorAll('#order-lines select')];
+
+function setLineVendor(sel, vendor) {
+  const item = store.getItem(sel.closest('[data-id]').dataset.id);
+  sel.innerHTML = vendorOptions(itemVendors(item), vendor);
+  sel.dataset.prev = vendor;
+}
+
+function askNewVendor() {
+  const name = prompt('New vendor name')?.trim();
+  if (name && !orderVendors.includes(name)) orderVendors = uniqueSorted([...orderVendors, name]);
+  return name || '';
+}
 
 function updateOrderPreview() {
-  $('#order-preview').textContent = store.previewOrderNo(prefixInput.value.trim() || 'PREFIX');
+  vendorAll.innerHTML = '<option value="" selected>Choose…</option>' +
+    orderVendors.map((v) => `<option value="${esc(v)}">${esc(v)}</option>`).join('') +
+    `<option value="${NEW_VENDOR}">New vendor…</option>`;
+  const counts = new Map();
+  let unassigned = 0;
+  for (const sel of lineSelects()) {
+    if (sel.value) counts.set(sel.value, (counts.get(sel.value) || 0) + 1); else unassigned++;
+  }
+  const vendors = [...counts.keys()].sort((a, b) => a.localeCompare(b));
+  const nos = store.previewOrderNos(vendors);
+  $('#order-preview').innerHTML = vendors.map((v, i) =>
+    `<li><strong>${esc(nos[i])}</strong><span>${plural(counts.get(v), 'item')}</span></li>`).join('') +
+    (unassigned ? `<li class="warn">${plural(unassigned, 'item')} without a vendor</li>` : '');
 }
 
 $('#btn-place-order').addEventListener('click', () => {
   const rows = selectedRows();
   if (!rows.length) return;
+  const open = view.inventoryVendor;
+  orderVendors = uniqueSorted(store.getState().items.flatMap((i) => [i.vendor1, i.vendor2]));
   $('#order-summary').textContent = selectionSummary(rows);
-  prefixInput.value = store.getState().lastPrefix;
+  $('#order-lines').innerHTML = rows.map(({ item, qty }) => `
+    <li data-id="${esc(item.id)}">
+      <span class="assign-item">${item.code ? `<span class="row-id">${esc(item.code)}</span>` : ''}${esc(item.name1)}
+        <small>Qty ${fmtQty(qty)}${item.orderUnit ? ' × ' + esc(item.orderUnit) : ''}</small></span>
+      <select aria-label="Vendor for ${esc(item.name1)}"></select>
+    </li>`).join('');
+  for (const sel of lineSelects()) {
+    const own = itemVendors(store.getItem(sel.closest('[data-id]').dataset.id));
+    setLineVendor(sel, own.includes(open) ? open : own[0] || '');
+  }
   updateOrderPreview();
   orderDialog.showModal();
 });
 
-prefixInput.addEventListener('input', updateOrderPreview);
+orderForm.addEventListener('change', (e) => {
+  const sel = e.target;
+  if (sel === vendorAll) {
+    const v = sel.value === NEW_VENDOR ? askNewVendor() : sel.value;
+    if (v) lineSelects().forEach((s) => setLineVendor(s, v));
+  } else if (sel.matches('#order-lines select')) {
+    if (sel.value === NEW_VENDOR) {
+      const v = askNewVendor();
+      setLineVendor(sel, v || sel.dataset.prev);
+    } else {
+      sel.dataset.prev = sel.value;
+    }
+  }
+  updateOrderPreview();
+});
+
 $('#btn-cancel-order').addEventListener('click', () => orderDialog.close());
 
 orderForm.addEventListener('submit', (e) => {
   e.preventDefault();
-  const prefix = prefixInput.value.trim();
-  if (!prefix) return prefixInput.focus();
-  const order = store.placeOrder(prefix);
+  const missing = lineSelects().find((s) => !s.value);
+  if (missing) {
+    toast('Choose a vendor for every item');
+    return missing.focus();
+  }
+  const vendorByItem = Object.fromEntries(lineSelects().map((s) => [s.closest('[data-id]').dataset.id, s.value]));
+  const orders = store.placeOrder(vendorByItem);
   orderDialog.close();
-  if (order) {
-    toast(`Order ${order.orderNo} recorded`);
+  if (orders.length) {
+    view.historyVendor = orders.length === 1 ? orders[0].vendor : ALL;
+    toast(orders.length === 1 ? `Order ${orders[0].orderNo} recorded` : `${orders.length} orders recorded`);
+    render();
     showTab('history');
   }
 });
@@ -393,6 +509,15 @@ function onListClick(e) {
 ['#inventory-list', '#selected-list', '#history-list'].forEach((sel) =>
   $(sel).addEventListener('click', onListClick));
 
+[['#inventory-vendors', 'inventoryVendor'], ['#history-vendors', 'historyVendor']].forEach(([sel, key]) =>
+  $(sel).addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-vendor]');
+    if (!btn) return;
+    view[key] = btn.dataset.vendor;
+    render();
+    window.scrollTo(0, 0);
+  }));
+
 $('#btn-clear-selected').addEventListener('click', () => {
   if (confirm('Clear all selected items?')) store.clearSelected();
 });
@@ -417,9 +542,9 @@ const csvDate = (iso) => {
 const today = () => localDay(new Date()); // for export file names
 
 const ordersCsv = (orders) => csvBlob(toCSV(
-  ['Order No', 'Date', 'ID', 'Brand', 'Name1', 'Name2', 'Size', 'Qty', 'Order Unit', 'Vendor1', 'Vendor2'],
+  ['Order No', 'Vendor', 'Date', 'ID', 'Brand', 'Name1', 'Name2', 'Size', 'Qty', 'Order Unit', 'Vendor1', 'Vendor2'],
   orders.flatMap((o) => o.lines.map((l) => [
-    o.orderNo, csvDate(o.createdAt), l.code, l.brand, l.name1, l.name2, l.size,
+    o.orderNo, o.vendor, csvDate(o.createdAt), l.code, l.brand, l.name1, l.name2, l.size,
     l.qty, l.orderUnit, l.vendor1, l.vendor2,
   ]))));
 
@@ -479,6 +604,22 @@ const menuActions = {
     const { orders } = store.getState();
     if (!orders.length) return toast('No orders to export');
     saveFile(`orders-${today()}.csv`, ordersCsv(orders));
+  },
+  storage: async () => {
+    const persisted = await requestPersistentStorage();
+    const est = await navigator.storage?.estimate?.().catch(() => null);
+    const mb = (n) => `${(n / 1048576).toFixed(1)} MB`;
+    const lines = [
+      persisted
+        ? '✓ Persistent storage is on: the browser will not clear this data to free up space.'
+        : '✗ Persistent storage was not granted, so the browser may clear this data when space runs low or the app goes unused.',
+      isInstalled()
+        ? '✓ Running from the Home Screen.'
+        : '✗ Not running from the Home Screen. In Safari, tap Share → Add to Home Screen and open it from there: Safari deletes data of websites that aren\'t used for 7 days, but not of Home Screen apps.',
+    ];
+    if (est?.usage != null) lines.push(`Using ${mb(est.usage)}${est.quota ? ` of ${mb(est.quota)}` : ''}.`);
+    lines.push('Tip: export inventory, photos and order history now and then as a backup.');
+    alert(lines.join('\n\n'));
   },
   reset: () => {
     if (confirm('Erase ALL inventory, selections and order history on this device? This cannot be undone.')) {
@@ -555,8 +696,23 @@ $('#category-filter').addEventListener('change', () => { renderInventory(); load
 store.onChange(render);
 render();
 
-// Ask the browser not to evict our localStorage under storage pressure.
-navigator.storage?.persist?.();
+// Ask the browser to keep our data (localStorage + IndexedDB photos) instead of evicting it
+// under storage pressure. Some browsers only grant this after a user gesture or once the app
+// is on the Home Screen, so ask again on the first tap of each launch if it was refused.
+async function requestPersistentStorage() {
+  if (!navigator.storage?.persist) return false;
+  try {
+    return (await navigator.storage.persisted()) || (await navigator.storage.persist());
+  } catch {
+    return false;
+  }
+}
+
+const isInstalled = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+
+requestPersistentStorage().then((ok) => {
+  if (!ok) document.addEventListener('pointerdown', requestPersistentStorage, { once: true });
+});
 
 // Service workers need HTTPS or localhost; on plain LAN HTTP this is skipped.
 if ('serviceWorker' in navigator) {

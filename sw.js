@@ -1,6 +1,6 @@
 // Offline support: serve from cache immediately, refresh the cache in the background
 // (stale-while-revalidate). Bump CACHE when ASSETS changes so old caches are dropped.
-const CACHE = 'inventoryapp-v4';
+const CACHE = 'inventoryapp-v5';
 const ASSETS = [
   './',
   'index.html',

@@ -28,12 +28,16 @@
   </header>
 
   <main>
-    <section id="view-inventory" class="view active" aria-label="Inventory">
-      <div class="toolbar">
-        <input id="search" type="search" placeholder="Search" autocomplete="off" enterkeyhint="search">
-        <select id="category-filter" aria-label="Category"></select>
+    <section id="view-inventory" class="view split active" aria-label="Inventory">
+      <nav id="inventory-vendors" class="vendor-pane" aria-label="Vendors"></nav>
+      <div class="pane">
+        <div class="toolbar">
+          <input id="search" type="search" placeholder="Search" autocomplete="off" enterkeyhint="search">
+          <select id="category-filter" aria-label="Category"></select>
+        </div>
+        <h2 id="inventory-heading" class="pane-title"></h2>
+        <ul id="inventory-list" class="list"></ul>
       </div>
-      <ul id="inventory-list" class="list"></ul>
     </section>
 
     <section id="view-selected" class="view" aria-label="Selected">
@@ -45,8 +49,12 @@
       </div>
     </section>
 
-    <section id="view-history" class="view" aria-label="Order History">
-      <ul id="history-list" class="list"></ul>
+    <section id="view-history" class="view split" aria-label="Order History">
+      <nav id="history-vendors" class="vendor-pane" aria-label="Vendors"></nav>
+      <div class="pane">
+        <h2 id="history-heading" class="pane-title"></h2>
+        <ul id="history-list" class="list"></ul>
+      </div>
     </section>
   </main>
 
@@ -105,12 +113,14 @@
   <datalist id="unit-list"></datalist>
   <datalist id="vendor-list"></datalist>
 
-  <dialog id="order-dialog">
+  <dialog id="order-dialog" class="wide">
     <form id="order-form">
       <h2>Place Order</h2>
       <p id="order-summary" class="dialog-note"></p>
-      <label>Order prefix<input name="prefix" required autocomplete="off" autocapitalize="characters" enterkeyhint="done"></label>
-      <p class="dialog-note">Order number: <strong id="order-preview"></strong></p>
+      <label>Assign every item to<select id="order-vendor-all"></select></label>
+      <ul id="order-lines" class="assign-list"></ul>
+      <p class="dialog-note">One order per vendor:</p>
+      <ul id="order-preview" class="order-preview"></ul>
       <div class="dialog-actions">
         <span class="spacer"></span>
         <button type="button" id="btn-cancel-order" class="btn">Cancel</button>
@@ -126,6 +136,7 @@
       <button data-menu="export-photos">Export photos (ZIP)</button>
       <button data-menu="export-inventory">Export inventory CSV</button>
       <button data-menu="export-orders">Export order history CSV</button>
+      <button data-menu="storage">Storage status</button>
       <button data-menu="reset" class="danger">Erase all data</button>
     </div>
     <div class="sheet-group">

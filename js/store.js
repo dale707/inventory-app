@@ -3,9 +3,8 @@
 //   items:    [{ id, code, brand, category, name1, name2, size, orderUnit, vendor1, vendor2, remarks, img }]
 //             (id is internal; code is the user-facing "ID"; img is a photo stamp or '' — see images.js)
 //   selected: { [itemId]: qty }
-//   orders:   [{ id, orderNo, createdAt, lines: [{ itemId, code, brand, name1, name2, size, orderUnit, vendor1, vendor2, qty }] }]  newest first
+//   orders:   [{ id, orderNo, vendor, createdAt, lines: [{ itemId, code, brand, name1, name2, size, orderUnit, vendor1, vendor2, qty }] }]  newest first
 //   daySeq:   { date: 'YYYYMMDD', n }  last order sequence number used on that date
-//   lastPrefix: string
 //   codeSeq:  last number used for auto-assigned item IDs (0001, 0002, ...)
 
 const KEY = 'inventoryapp.v1';
@@ -19,7 +18,7 @@ export const FIELD_LABELS = {
   size: 'Size', orderUnit: 'Order Unit', vendor1: 'Vendor1', vendor2: 'Vendor2', remarks: 'Remarks',
 };
 
-const emptyState = () => ({ items: [], selected: {}, orders: [], daySeq: { date: '', n: 0 }, lastPrefix: '', codeSeq: 0 });
+const emptyState = () => ({ items: [], selected: {}, orders: [], daySeq: { date: '', n: 0 }, codeSeq: 0 });
 
 function load() {
   let raw = null;
@@ -36,7 +35,8 @@ function load() {
 }
 
 // Upgrades saved data from earlier versions: v1 fields (sku/name/unit/qty, numeric order
-// numbers) and items saved before IDs were auto-assigned.
+// numbers), items saved before IDs were auto-assigned, and orders from before vendors
+// replaced the free-text prefix (the old prefix becomes the order's vendor).
 function migrate(s) {
   s.items = s.items.map((i) => ('name1' in i ? normalize(i) : normalize({
     id: i.id, code: i.sku, category: i.category, name1: i.name, orderUnit: i.unit,
@@ -47,7 +47,9 @@ function migrate(s) {
     createdAt: o.createdAt,
     lines: o.lines.map((l) => ({ itemId: l.itemId, code: l.sku, brand: '', name1: l.name, name2: '', orderUnit: l.unit, qty: l.qty })),
   }));
+  for (const o of s.orders) if (!('vendor' in o)) o.vendor = o.orderNo.match(/^(.*)-\d{8}-\d{3,}$/)?.[1] ?? '';
   delete s.nextOrderNo;
+  delete s.lastPrefix;
   const numericCodes = s.items.map((i) => (/^\d+$/.test(i.code) ? Number(i.code) : 0));
   s.codeSeq = Math.max(s.codeSeq, 0, ...numericCodes);
   for (const i of s.items) if (!i.code) i.code = assignCode(s);
@@ -162,42 +164,46 @@ export function clearSelected() {
 const pad = (n, w = 2) => String(n).padStart(w, '0');
 const localDate = (d) => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
 
-// Order number = PREFIX-YYYYMMDD-NNN. The sequence restarts at 001 each day, is shared by
-// all prefixes, and never reuses a number (even if an order is deleted).
-export function formatOrderNo(prefix, date, seq) {
-  return `${clean(prefix)}-${date}-${pad(seq, 3)}`;
+// Order number = VENDOR-YYYYMMDD-NNN. The sequence restarts at 001 each day, is shared by
+// all vendors, and never reuses a number (even if an order is deleted).
+export function formatOrderNo(vendor, date, seq) {
+  return `${clean(vendor)}-${date}-${pad(seq, 3)}`;
 }
 
-export function previewOrderNo(prefix, now = new Date()) {
+const nextSeq = (date) => (state.daySeq.date === date ? state.daySeq.n + 1 : 1);
+
+// The numbers placeOrder() would give orders for these vendors, in this order.
+export function previewOrderNos(vendors, now = new Date()) {
   const date = localDate(now);
-  const seq = state.daySeq.date === date ? state.daySeq.n + 1 : 1;
-  return formatOrderNo(prefix, date, seq);
+  const first = nextSeq(date);
+  return vendors.map((v, i) => formatOrderNo(v, date, first + i));
 }
 
-// Records the current selection as an order. Returns null if nothing is selected.
-export function placeOrder(prefix) {
-  const lines = Object.entries(state.selected)
-    .map(([itemId, qty]) => {
-      const it = getItem(itemId);
-      return it && qty > 0
-        ? {
-          itemId, code: it.code, brand: it.brand, name1: it.name1, name2: it.name2, size: it.size,
-          orderUnit: it.orderUnit, vendor1: it.vendor1, vendor2: it.vendor2, qty,
-        }
-        : null;
-    })
-    .filter(Boolean);
-  if (!lines.length) return null;
+// Records the current selection as one order per vendor. vendorByItem: { [itemId]: vendor }.
+// Lines without a vendor are left selected. Returns the new orders (empty if none).
+export function placeOrder(vendorByItem) {
+  const groups = new Map();
+  for (const [itemId, qty] of Object.entries(state.selected)) {
+    const it = getItem(itemId);
+    const vendor = clean(vendorByItem[itemId]);
+    if (!it || !(qty > 0) || !vendor) continue;
+    if (!groups.has(vendor)) groups.set(vendor, []);
+    groups.get(vendor).push({
+      itemId, code: it.code, brand: it.brand, name1: it.name1, name2: it.name2, size: it.size,
+      orderUnit: it.orderUnit, vendor1: it.vendor1, vendor2: it.vendor2, qty,
+    });
+    delete state.selected[itemId];
+  }
   const now = new Date();
   const date = localDate(now);
-  const n = state.daySeq.date === date ? state.daySeq.n + 1 : 1;
-  state.daySeq = { date, n };
-  state.lastPrefix = clean(prefix);
-  const order = { id: uid(), orderNo: formatOrderNo(prefix, date, n), createdAt: now.toISOString(), lines };
-  state.orders.unshift(order);
-  state.selected = {};
-  commit();
-  return order;
+  const orders = [...groups.keys()].sort((a, b) => a.localeCompare(b)).map((vendor) => {
+    const n = nextSeq(date);
+    state.daySeq = { date, n };
+    return { id: uid(), orderNo: formatOrderNo(vendor, date, n), vendor, createdAt: now.toISOString(), lines: groups.get(vendor) };
+  });
+  state.orders.unshift(...[...orders].reverse());
+  if (orders.length) commit();
+  return orders;
 }
 
 export function deleteOrder(id) {
