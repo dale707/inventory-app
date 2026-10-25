@@ -161,11 +161,27 @@
       <button data-menu="export-inventory">Export inventory CSV</button>
       <button data-menu="export-orders">Export order history CSV</button>
       <button data-menu="storage">Storage status</button>
+      <button data-menu="delete-vendor" class="danger">Delete a vendor's data…</button>
       <button data-menu="reset" class="danger">Erase all data</button>
     </div>
     <div class="sheet-group">
       <button data-menu="close" class="bold">Cancel</button>
     </div>
+  </dialog>
+
+  <dialog id="vendor-delete-dialog">
+    <form id="vendor-delete-form">
+      <h2>Delete Vendor Data</h2>
+      <label>Vendor<select name="vendor"></select></label>
+      <label class="check"><input type="checkbox" name="items" checked><span id="vendor-delete-items">Inventory items</span></label>
+      <label class="check"><input type="checkbox" name="orders" checked><span id="vendor-delete-orders">Order history</span></label>
+      <p class="dialog-note">Items are deleted with their photos and removed from Selected. Other vendors' copies of the same ID are kept. This cannot be undone.</p>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" id="btn-cancel-vendor-delete" class="btn">Cancel</button>
+        <button type="submit" class="btn danger">Delete</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="image-dialog" class="lightbox" aria-label="Photo">

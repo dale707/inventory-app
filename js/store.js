@@ -266,6 +266,18 @@ export function reorder(id) {
   return missing;
 }
 
+// Removes one vendor's items (vendor '' = items without a vendor) and/or its orders, plus
+// those items' selections. Returns the deleted item ids (the caller deletes their photos).
+export function deleteVendorData(vendor, { items = true, orders = true } = {}) {
+  const gone = items ? state.items.filter((i) => i.vendor === vendor).map((i) => i.id) : [];
+  const goneSet = new Set(gone);
+  state.items = state.items.filter((i) => !goneSet.has(i.id));
+  for (const id of gone) delete state.selected[id];
+  if (orders) state.orders = state.orders.filter((o) => o.vendor !== vendor);
+  commit();
+  return gone;
+}
+
 export function resetAll() {
   state = emptyState();
   commit();
