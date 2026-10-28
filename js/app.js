@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { parseCSV, rowsToItems, toCSV } from './csv.js';
+import { parseCSV, rowsToItems, rowsToVendors, toCSV } from './csv.js';
 import * as images from './images.js';
 import { makeZip } from './zip.js';
 
@@ -13,21 +13,29 @@ const joinDot = (parts) => parts.filter(Boolean).map(esc).join(' · ');
 const uniqueSorted = (values) => [...new Set(values.filter(Boolean))].sort((a, b) => a.localeCompare(b));
 const datalist = (values) => values.map((v) => `<option value="${esc(v)}">`).join('');
 
-const TITLES = { inventory: 'Inventory', selected: 'Selected', history: 'Order History' };
+const TITLES = { inventory: 'Inventory', selected: 'Selected', history: 'Order History', vendors: 'Vendors' };
 
 // Vendor pane keys besides real vendor names.
 const ALL = '\uE000all';
 const NONE = '\uE000none';
-const view = { inventoryVendor: ALL, historyVendor: ALL }; // which vendor each pane shows
+const view = { inventoryVendor: ALL, historyVendor: ALL, vendorKey: null }; // which vendor each pane shows
 
 const itemVendors = (i) => (i.vendor ? [i.vendor] : []);
 const inVendor = (vendors, key) =>
   key === ALL || (key === NONE ? !vendors.length : vendors.includes(key));
 const vendorLabel = (key) => (key === ALL ? 'All' : key === NONE ? 'No vendor' : key);
+// Every vendor name in use: on items, plus those with saved details.
+const knownVendors = () => {
+  const { items, vendors } = store.getState();
+  return uniqueSorted([...items.map((i) => i.vendor), ...vendors.map((v) => v.name)]);
+};
 
 // ---------- Tabs ----------
 
+let currentTab = 'inventory';
+
 function showTab(tab) {
+  currentTab = tab;
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${tab}`));
   document.querySelectorAll('.tab').forEach((b) => {
     const on = b.dataset.tab === tab;
@@ -35,7 +43,8 @@ function showTab(tab) {
     b.setAttribute('aria-selected', on);
   });
   $('#title').textContent = TITLES[tab];
-  $('#btn-add').hidden = tab !== 'inventory';
+  $('#btn-add').hidden = tab !== 'inventory' && tab !== 'vendors';
+  $('#btn-add').setAttribute('aria-label', tab === 'vendors' ? 'Add vendor' : 'Add item');
   window.scrollTo(0, 0);
 }
 
@@ -125,7 +134,7 @@ function renderInventory() {
   $('#category-list').innerHTML = datalist(cats);
   $('#brand-list').innerHTML = datalist(uniqueSorted(items.map((i) => i.brand)));
   $('#unit-list').innerHTML = datalist(uniqueSorted(items.map((i) => i.orderUnit)));
-  $('#vendor-list').innerHTML = datalist(uniqueSorted(items.map((i) => i.vendor)));
+  $('#vendor-list').innerHTML = datalist(knownVendors());
 
   const q = $('#search').value.trim().toLowerCase();
   const matches = (i) => [i.name1, i.name2, i.remarks, i.vendor, i.code, i.brand]
@@ -232,10 +241,132 @@ function renderHistory() {
   }).join('');
 }
 
+// ---------- Vendors tab ----------
+
+// Left: every vendor (with saved details, or only named on items/orders). Right: the chosen
+// vendor's details as an editable form. view.vendorKey is the lower-cased name, or NEW_KEY.
+const NEW_KEY = '\uE000new';
+const vendorForm = $('#vendor-form');
+let vendorFormKey = null; // which vendor the form holds
+let vendorDirty = false;  // unsaved edits in the form
+
+// [{ key, name, record, count }] sorted by name; count = items under that vendor.
+function vendorEntries() {
+  const { items, orders, vendors } = store.getState();
+  const byKey = new Map();
+  const add = (name, record) => {
+    const key = name.toLowerCase();
+    if (!byKey.has(key)) byKey.set(key, { key, name, record: null, count: 0 });
+    if (record) Object.assign(byKey.get(key), { name, record });
+  };
+  vendors.forEach((v) => add(v.name, v));
+  items.forEach((i) => i.vendor && add(i.vendor));
+  orders.forEach((o) => o.vendor && add(o.vendor));
+  items.forEach((i) => { if (i.vendor) byKey.get(i.vendor.toLowerCase()).count++; });
+  return [...byKey.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function fillVendorForm(entry) {
+  for (const f of store.VENDOR_FIELDS) vendorForm.elements[f].value = entry?.record?.[f] ?? '';
+  if (entry && !entry.record) vendorForm.elements.name.value = entry.name;
+  vendorFormKey = view.vendorKey;
+  vendorDirty = false;
+}
+
+function renderVendors() {
+  const entries = vendorEntries();
+  if (!entries.some((e) => e.key === view.vendorKey) && view.vendorKey !== NEW_KEY) {
+    view.vendorKey = entries[0]?.key ?? NEW_KEY;
+  }
+  const entry = entries.find((e) => e.key === view.vendorKey);
+  const q = $('#vendor-search').value.trim().toLowerCase();
+  const shown = !q ? entries : entries.filter((e) =>
+    [e.name, ...(e.record ? store.VENDOR_FIELDS.map((f) => e.record[f]) : [])].some((v) => v.toLowerCase().includes(q)));
+  $('#vendor-pane').innerHTML = shown.map((e) => `
+    <button class="vendor${e.key === view.vendorKey ? ' active' : ''}${e.record ? '' : ' no-details'}"
+      data-vendor="${esc(e.key)}" aria-pressed="${e.key === view.vendorKey}">
+      <span>${esc(e.name)}</span><b>${fmtQty(e.count)}</b>
+    </button>`).join('') ||
+    (q ? '<p class="pane-empty">No matches</p>' : '');
+
+  $('#vendor-heading').textContent = !entry ? 'New vendor'
+    : `${entry.name} · ${plural(entry.count, 'item')}${entry.record ? '' : ' · no details saved yet'}`;
+  $('#btn-delete-vendor').hidden = !entry?.record;
+  $('#btn-vendor-items').hidden = !entry?.count;
+  // Keep what's being typed; otherwise show the latest saved details (e.g. after an import).
+  if (vendorFormKey !== view.vendorKey || !vendorDirty) fillVendorForm(entry);
+}
+
+const confirmDiscardVendor = () =>
+  !vendorDirty || confirm('Discard unsaved changes to this vendor?');
+
+function selectVendor(key) {
+  if (key === view.vendorKey) return true;
+  if (!confirmDiscardVendor()) return false;
+  view.vendorKey = key;
+  vendorDirty = false;
+  renderVendors();
+  return true;
+}
+
+vendorForm.addEventListener('input', () => { vendorDirty = true; });
+
+$('#vendor-pane').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-vendor]');
+  if (btn && selectVendor(btn.dataset.vendor)) window.scrollTo(0, 0);
+});
+
+$('#vendor-search').addEventListener('input', renderVendors);
+
+vendorForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const entry = vendorEntries().find((x) => x.key === vendorFormKey);
+  const values = { id: entry?.record?.id };
+  for (const f of store.VENDOR_FIELDS) values[f] = vendorForm.elements[f].value;
+  const renamed = entry && entry.name !== values.name.trim() && entry.count;
+  if (renamed && !confirm(`Rename “${entry.name}” to “${values.name.trim()}” on its ${plural(entry.count, 'item')} and orders too?`)) return;
+  const result = store.saveVendor(values, entry?.name);
+  if (result.error) {
+    alert(result.error);
+    return vendorForm.elements.name.focus();
+  }
+  vendorDirty = false;
+  view.vendorKey = result.vendor.name.toLowerCase();
+  vendorFormKey = null; // refill from the saved record
+  render();
+  toast(`Saved ${result.vendor.name}`);
+});
+
+$('#btn-revert-vendor').addEventListener('click', () => {
+  vendorDirty = false;
+  vendorFormKey = null;
+  renderVendors();
+});
+
+$('#btn-delete-vendor').addEventListener('click', () => {
+  const entry = vendorEntries().find((x) => x.key === view.vendorKey);
+  if (!entry?.record) return;
+  const kept = entry.count ? ` Its ${plural(entry.count, 'item')} and orders are kept (⋯ → Delete a vendor's data… removes those).` : '';
+  if (!confirm(`Delete the details of “${entry.name}”?${kept}`)) return;
+  vendorDirty = false;
+  store.deleteVendor(entry.record.id);
+  toast('Vendor details deleted');
+});
+
+$('#btn-vendor-items').addEventListener('click', () => {
+  const entry = vendorEntries().find((x) => x.key === view.vendorKey);
+  const vendor = entry && store.getState().items.find((i) => i.vendor.toLowerCase() === entry.key)?.vendor;
+  if (!vendor) return;
+  view.inventoryVendor = vendor;
+  render();
+  showTab('inventory');
+});
+
 function render() {
   renderInventory();
   renderSelected();
   renderHistory();
+  renderVendors();
   loadThumbs();
 }
 
@@ -380,7 +511,7 @@ $('#btn-copy-item').addEventListener('click', () => {
   if (!item) return;
   const { items } = store.getState();
   const taken = new Set(items.filter((i) => i.code === item.code).map((i) => i.vendor.toLowerCase()));
-  $('#copy-vendor-list').innerHTML = datalist(uniqueSorted(items.map((i) => i.vendor)).filter((v) => !taken.has(v.toLowerCase())));
+  $('#copy-vendor-list').innerHTML = datalist(knownVendors().filter((v) => !taken.has(v.toLowerCase())));
   $('#copy-summary').innerHTML = `<span class="row-id">${esc(item.code)}</span>${esc(item.name1)}` +
     (item.vendor ? ` — now under ${esc(item.vendor)}` : '');
   copyForm.elements.vendor.value = '';
@@ -480,7 +611,7 @@ function updateOrderPreview() {
 $('#btn-place-order').addEventListener('click', () => {
   const rows = selectedRows();
   if (!rows.length) return;
-  orderVendors = uniqueSorted(store.getState().items.map((i) => i.vendor));
+  orderVendors = knownVendors();
   $('#order-summary').textContent = selectionSummary(rows);
   $('#order-lines').innerHTML = rows.map(({ item, qty }) => `
     <li data-id="${esc(item.id)}">
@@ -594,6 +725,7 @@ $('#btn-clear-selected').addEventListener('click', () => {
 
 const menuDialog = $('#menu-dialog');
 const csvInput = $('#csv-input');
+const vendorCsvInput = $('#vendor-csv-input');
 const photosBulkInput = $('#photos-bulk-input');
 
 
@@ -675,6 +807,15 @@ const menuActions = {
     if (!orders.length) return toast('No orders to export');
     saveFile(`orders-${today()}.csv`, ordersCsv(orders));
   },
+  'import-vendors': () => vendorCsvInput.click(),
+  'export-vendors': () => {
+    const { vendors } = store.getState();
+    if (!vendors.length) return toast('No vendor details to export');
+    const sorted = [...vendors].sort((a, b) => a.name.localeCompare(b.name));
+    saveFile(`vendors-${today()}.csv`, csvBlob(toCSV(
+      store.VENDOR_FIELDS.map((f) => store.VENDOR_LABELS[f]),
+      sorted.map((v) => store.VENDOR_FIELDS.map((f) => v[f])))));
+  },
   storage: async () => {
     const persisted = await requestPersistentStorage();
     const est = await navigator.storage?.estimate?.().catch(() => null);
@@ -688,7 +829,7 @@ const menuActions = {
         : '✗ Not running from the Home Screen. In Safari, tap Share → Add to Home Screen and open it from there: Safari deletes data of websites that aren\'t used for 7 days, but not of Home Screen apps.',
     ];
     if (est?.usage != null) lines.push(`Using ${mb(est.usage)}${est.quota ? ` of ${mb(est.quota)}` : ''}.`);
-    lines.push('Tip: export inventory, photos and order history now and then as a backup.');
+    lines.push('Tip: export inventory, photos, order history and vendors now and then as a backup.');
     alert(lines.join('\n\n'));
   },
   'delete-vendor': () => {
@@ -705,7 +846,7 @@ const menuActions = {
     vendorDeleteDialog.showModal();
   },
   reset: () => {
-    if (confirm('Erase ALL inventory, selections and order history on this device? This cannot be undone.')) {
+    if (confirm('Erase ALL inventory, selections, order history and vendors on this device? This cannot be undone.')) {
       store.resetAll();
       images.clearImages().catch(() => {});
       toast('All data erased');
@@ -766,6 +907,20 @@ csvInput.addEventListener('change', async () => {
   toast(`Imported: ${added} added, ${updated} updated`);
 });
 
+vendorCsvInput.addEventListener('change', async () => {
+  const file = vendorCsvInput.files[0];
+  vendorCsvInput.value = '';
+  if (!file) return;
+  const result = rowsToVendors(parseCSV(await file.text()));
+  if (result.error) return alert(result.error);
+  if (!result.vendors.length) return alert('No vendors found in the file.');
+  const skippedNote = result.skipped ? `\n${result.skipped} row(s) without a Vendor Name will be skipped.` : '';
+  if (!confirm(`Import ${result.vendors.length} vendor(s)?\nVendors with a matching name are updated; others are added.${skippedNote}`)) return;
+  vendorDirty = false;
+  const { added, updated } = store.importVendors(result.vendors);
+  toast(`Imported: ${added} added, ${updated} updated`);
+});
+
 // Matches each photo to items by file name: "BOX-S.jpg" → every item with ID BOX-S (all
 // vendors), or else Name1 "BOX-S".
 photosBulkInput.addEventListener('change', async () => {
@@ -807,7 +962,10 @@ photosBulkInput.addEventListener('change', async () => {
 // ---------- Startup ----------
 
 document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab)));
-$('#btn-add').addEventListener('click', () => openItemDialog(null));
+$('#btn-add').addEventListener('click', () => {
+  if (currentTab !== 'vendors') return openItemDialog(null);
+  if (selectVendor(NEW_KEY)) vendorForm.elements.name.focus();
+});
 $('#search').addEventListener('input', () => { renderInventory(); loadThumbs(); });
 $('#category-filter').addEventListener('change', () => { renderInventory(); loadThumbs(); });
 

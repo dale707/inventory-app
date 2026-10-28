@@ -8,6 +8,8 @@
 //   orders:   [{ id, orderNo, vendor, createdAt, lines: [{ itemId, code, brand, name1, name2, size, orderUnit, qty }] }]  newest first
 //   daySeq:   { date: 'YYYYMMDD', n }  last order sequence number used on that date
 //   codeSeq:  last number used for auto-assigned item IDs (0001, 0002, ...)
+//   vendors:  [{ id, name, alias1, alias2, howToOrder, bookLatestDate, deliveryDate, phone, email, sales, remarks1 }]
+//             vendor details; items/orders refer to a vendor by name (case-insensitive)
 
 const KEY = 'inventoryapp.v1';
 const listeners = [];
@@ -25,7 +27,16 @@ export const FIELD_LABELS = {
   size: 'Size', orderUnit: 'Order Unit', vendor: 'Vendor', remarks: 'Remarks',
 };
 
-const emptyState = () => ({ items: [], selected: {}, orders: [], daySeq: { date: '', n: 0 }, codeSeq: 0 });
+export const VENDOR_FIELDS = ['name', 'alias1', 'alias2', 'howToOrder', 'bookLatestDate', 'deliveryDate', 'phone', 'email', 'sales', 'remarks1'];
+
+// Column headers used for vendor CSV export (import also accepts these, see csv.js).
+export const VENDOR_LABELS = {
+  name: 'Vendor Name', alias1: 'Alias 1', alias2: 'Alias 2', howToOrder: 'Howto Order',
+  bookLatestDate: 'BookLatestDate', deliveryDate: 'DeliveryDate', phone: 'PhoneNum', email: 'Email',
+  sales: 'Sales', remarks1: 'Remarks 1',
+};
+
+const emptyState = () => ({ items: [], selected: {}, orders: [], daySeq: { date: '', n: 0 }, codeSeq: 0, vendors: [] });
 
 function load() {
   let raw = null;
@@ -64,6 +75,7 @@ function migrate(s) {
     lines: o.lines.map((l) => ({ itemId: l.itemId, code: l.sku, brand: '', name1: l.name, name2: '', orderUnit: l.unit, qty: l.qty })),
   }));
   for (const o of s.orders) if (!('vendor' in o)) o.vendor = o.orderNo.match(/^(.*)-\d{8}-\d{3,}$/)?.[1] ?? '';
+  s.vendors = s.vendors.map(normalizeVendor);
   delete s.nextOrderNo;
   delete s.lastPrefix;
   const numericCodes = s.items.map((i) => (/^\d+$/.test(i.code) ? Number(i.code) : 0));
@@ -114,6 +126,12 @@ function normalize(item) {
   for (const f of ITEM_FIELDS) out[f] = clean(item[f]);
   out.noMore = toBool(item.noMore);
   out.img = clean(item.img);
+  return out;
+}
+
+function normalizeVendor(vendor) {
+  const out = { id: vendor.id || uid() };
+  for (const f of VENDOR_FIELDS) out[f] = clean(vendor[f]);
   return out;
 }
 
@@ -276,6 +294,58 @@ export function deleteVendorData(vendor, { items = true, orders = true } = {}) {
   if (orders) state.orders = state.orders.filter((o) => o.vendor !== vendor);
   commit();
   return gone;
+}
+
+// ---------- Vendor details ----------
+
+export const getVendor = (id) => state.vendors.find((v) => v.id === id);
+const vendorInUse = (name) =>
+  state.items.some((i) => same(i.vendor, name)) || state.orders.some((o) => same(o.vendor, name));
+
+// Adds or updates a vendor's details. oldName is the name the vendor had before editing
+// (its saved name, or the name items use when it had no details yet); if the name changed,
+// items and orders under oldName are renamed too (order numbers stay as they were).
+// Returns { vendor } or { error }.
+export function saveVendor(vendor, oldName = '') {
+  const next = normalizeVendor(vendor);
+  if (!next.name) return { error: 'Vendor Name is required.' };
+  const other = state.vendors.find((v) => v.id !== next.id && same(v.name, next.name));
+  if (other) return { error: `A vendor named “${other.name}” already exists.` };
+  const old = clean(oldName);
+  if (old && !same(old, next.name) && vendorInUse(next.name)) {
+    return { error: `Items or orders already use the vendor name “${next.name}”.` };
+  }
+  if (old && old !== next.name) {
+    for (const i of state.items) if (same(i.vendor, old)) i.vendor = next.name;
+    for (const o of state.orders) if (same(o.vendor, old)) o.vendor = next.name;
+  }
+  const i = state.vendors.findIndex((v) => v.id === next.id);
+  if (i >= 0) state.vendors[i] = next; else state.vendors.push(next);
+  commit();
+  return { vendor: next };
+}
+
+// Removes only the details; the vendor's items and orders are kept.
+export function deleteVendor(id) {
+  state.vendors = state.vendors.filter((v) => v.id !== id);
+  commit();
+}
+
+// Merge CSV rows into vendor details, matching by Vendor Name (case-insensitive).
+export function importVendors(rows) {
+  let added = 0, updated = 0;
+  for (const r of rows) {
+    const existing = state.vendors.find((v) => same(v.name, r.name));
+    if (existing) {
+      Object.assign(existing, normalizeVendor({ ...existing, ...r, name: existing.name }));
+      updated++;
+    } else {
+      state.vendors.push(normalizeVendor(r));
+      added++;
+    }
+  }
+  commit();
+  return { added, updated };
 }
 
 export function resetAll() {

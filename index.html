@@ -62,6 +62,41 @@
         <ul id="history-list" class="list"></ul>
       </div>
     </section>
+
+    <section id="view-vendors" class="view split" aria-label="Vendors">
+      <nav id="vendor-pane" class="vendor-pane" aria-label="Vendors"></nav>
+      <div class="pane">
+        <div class="toolbar">
+          <input id="vendor-search" type="search" placeholder="Search vendors" autocomplete="off" enterkeyhint="search">
+        </div>
+        <h2 id="vendor-heading" class="pane-title"></h2>
+        <form id="vendor-form" class="form-card">
+          <label>Vendor Name<input name="name" required autocomplete="off"></label>
+          <div class="field-row">
+            <label>Alias 1<input name="alias1" autocomplete="off"></label>
+            <label>Alias 2<input name="alias2" autocomplete="off"></label>
+          </div>
+          <label>Howto Order<textarea name="howToOrder" rows="3"></textarea></label>
+          <div class="field-row">
+            <label>BookLatestDate<input name="bookLatestDate" autocomplete="off"></label>
+            <label>DeliveryDate<input name="deliveryDate" autocomplete="off"></label>
+          </div>
+          <div class="field-row">
+            <label>PhoneNum<input name="phone" type="tel" autocomplete="off"></label>
+            <label>Email<input name="email" inputmode="email" autocapitalize="off" autocomplete="off"></label>
+          </div>
+          <label>Sales<input name="sales" autocomplete="off"></label>
+          <label>Remarks 1<textarea name="remarks1" rows="3"></textarea></label>
+          <div class="dialog-actions">
+            <button type="button" id="btn-delete-vendor" class="btn danger">Delete</button>
+            <button type="button" id="btn-vendor-items" class="btn">Show items</button>
+            <span class="spacer"></span>
+            <button type="button" id="btn-revert-vendor" class="btn">Revert</button>
+            <button type="submit" class="btn primary">Save</button>
+          </div>
+        </form>
+      </div>
+    </section>
   </main>
 
   <nav class="tabbar" role="tablist">
@@ -77,6 +112,10 @@
     <button class="tab" data-tab="history" role="tab" aria-selected="false">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
       <span>History</span>
+    </button>
+    <button class="tab" data-tab="vendors" role="tab" aria-selected="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 21h18M5 21V10M19 21V10"/><path d="M3 10l2-6h14l2 6zM9 21v-6h6v6"/></svg>
+      <span>Vendor</span>
     </button>
   </nav>
 
@@ -160,6 +199,8 @@
       <button data-menu="export-photos">Export photos (ZIP)</button>
       <button data-menu="export-inventory">Export inventory CSV</button>
       <button data-menu="export-orders">Export order history CSV</button>
+      <button data-menu="import-vendors">Import vendors from CSV</button>
+      <button data-menu="export-vendors">Export vendors CSV</button>
       <button data-menu="storage">Storage status</button>
       <button data-menu="delete-vendor" class="danger">Delete a vendor's data…</button>
       <button data-menu="reset" class="danger">Erase all data</button>
@@ -193,6 +234,7 @@
   </dialog>
 
   <input type="file" id="csv-input" accept=".csv,text/csv,text/plain" hidden>
+  <input type="file" id="vendor-csv-input" accept=".csv,text/csv,text/plain" hidden>
   <input type="file" id="photo-input" accept="image/*" hidden>
   <input type="file" id="camera-input" accept="image/*" capture="environment" hidden>
   <input type="file" id="photos-bulk-input" accept="image/*" multiple hidden>
