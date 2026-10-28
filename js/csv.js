@@ -120,9 +120,14 @@ function pick(row, idx) {
 }
 
 export function toCSV(headers, rows) {
+  const quote = (s) => `"${s.replace(/"/g, '""')}"`;
   const cell = (v) => {
     const s = String(v ?? '');
-    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    return /[",\r\n]/.test(s) ? quote(s) : s;
   };
-  return [headers, ...rows].map((r) => r.map(cell).join(',')).join('\r\n');
+  const lines = [headers, ...rows].map((r) => r.map(cell).join(','));
+  // Excel mistakes a file starting with "ID" for a SYLK file and warns that the format doesn't
+  // match the extension; quoting the first cell avoids that.
+  if (/^ID/.test(lines[0])) lines[0] = quote(String(headers[0])) + lines[0].slice(String(headers[0]).length);
+  return lines.join('\r\n');
 }
