@@ -86,7 +86,7 @@
             <label>Email<input name="email" inputmode="email" autocapitalize="off" autocomplete="off"></label>
           </div>
           <label>Sales<input name="sales" autocomplete="off"></label>
-          <label>Remarks 1<textarea name="remarks1" rows="3"></textarea></label>
+          <label>Remarks<textarea name="remarks" rows="3"></textarea></label>
           <div class="dialog-actions">
             <button type="button" id="btn-delete-vendor" class="btn danger">Delete</button>
             <button type="button" id="btn-vendor-items" class="btn">Show items</button>
@@ -202,7 +202,6 @@
       <button data-menu="import-vendors">Import vendors from CSV</button>
       <button data-menu="export-vendors">Export vendors CSV</button>
       <button data-menu="storage">Storage status</button>
-      <button data-menu="delete-vendor" class="danger">Delete a vendor's data…</button>
       <button data-menu="reset" class="danger">Erase all data</button>
     </div>
     <div class="sheet-group">
@@ -212,8 +211,9 @@
 
   <dialog id="vendor-delete-dialog">
     <form id="vendor-delete-form">
-      <h2>Delete Vendor Data</h2>
-      <label>Vendor<select name="vendor"></select></label>
+      <h2>Delete Vendor</h2>
+      <p class="dialog-note"><strong id="vendor-delete-name"></strong></p>
+      <label class="check"><input type="checkbox" name="details" checked><span>Vendor details</span></label>
       <label class="check"><input type="checkbox" name="items" checked><span id="vendor-delete-items">Inventory items</span></label>
       <label class="check"><input type="checkbox" name="orders" checked><span id="vendor-delete-orders">Order history</span></label>
       <p class="dialog-note">Items are deleted with their photos and removed from Selected. Other vendors' copies of the same ID are kept. This cannot be undone.</p>

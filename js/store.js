@@ -8,7 +8,7 @@
 //   orders:   [{ id, orderNo, vendor, createdAt, lines: [{ itemId, code, brand, name1, name2, size, orderUnit, qty }] }]  newest first
 //   daySeq:   { date: 'YYYYMMDD', n }  last order sequence number used on that date
 //   codeSeq:  last number used for auto-assigned item IDs (0001, 0002, ...)
-//   vendors:  [{ id, name, alias1, alias2, howToOrder, bookLatestDate, deliveryDate, phone, email, sales, remarks1 }]
+//   vendors:  [{ id, name, alias1, alias2, howToOrder, bookLatestDate, deliveryDate, phone, email, sales, remarks }]
 //             vendor details; items/orders refer to a vendor by name (case-insensitive)
 
 const KEY = 'inventoryapp.v1';
@@ -27,13 +27,13 @@ export const FIELD_LABELS = {
   size: 'Size', orderUnit: 'Order Unit', vendor: 'Vendor', remarks: 'Remarks',
 };
 
-export const VENDOR_FIELDS = ['name', 'alias1', 'alias2', 'howToOrder', 'bookLatestDate', 'deliveryDate', 'phone', 'email', 'sales', 'remarks1'];
+export const VENDOR_FIELDS = ['name', 'alias1', 'alias2', 'howToOrder', 'bookLatestDate', 'deliveryDate', 'phone', 'email', 'sales', 'remarks'];
 
 // Column headers used for vendor CSV export (import also accepts these, see csv.js).
 export const VENDOR_LABELS = {
   name: 'Vendor Name', alias1: 'Alias 1', alias2: 'Alias 2', howToOrder: 'Howto Order',
   bookLatestDate: 'BookLatestDate', deliveryDate: 'DeliveryDate', phone: 'PhoneNum', email: 'Email',
-  sales: 'Sales', remarks1: 'Remarks 1',
+  sales: 'Sales', remarks: 'Remarks',
 };
 
 const emptyState = () => ({ items: [], selected: {}, orders: [], daySeq: { date: '', n: 0 }, codeSeq: 0, vendors: [] });
@@ -75,7 +75,7 @@ function migrate(s) {
     lines: o.lines.map((l) => ({ itemId: l.itemId, code: l.sku, brand: '', name1: l.name, name2: '', orderUnit: l.unit, qty: l.qty })),
   }));
   for (const o of s.orders) if (!('vendor' in o)) o.vendor = o.orderNo.match(/^(.*)-\d{8}-\d{3,}$/)?.[1] ?? '';
-  s.vendors = s.vendors.map(normalizeVendor);
+  s.vendors = s.vendors.map((v) => normalizeVendor({ remarks: v.remarks1, ...v })); // remarks1 → remarks
   delete s.nextOrderNo;
   delete s.lastPrefix;
   const numericCodes = s.items.map((i) => (/^\d+$/.test(i.code) ? Number(i.code) : 0));
@@ -284,14 +284,15 @@ export function reorder(id) {
   return missing;
 }
 
-// Removes one vendor's items (vendor '' = items without a vendor) and/or its orders, plus
+// Removes a vendor's details, items and/or orders (matched by name, case-insensitively), plus
 // those items' selections. Returns the deleted item ids (the caller deletes their photos).
-export function deleteVendorData(vendor, { items = true, orders = true } = {}) {
-  const gone = items ? state.items.filter((i) => i.vendor === vendor).map((i) => i.id) : [];
+export function deleteVendorData(vendor, { details = true, items = true, orders = true } = {}) {
+  const gone = items ? state.items.filter((i) => same(i.vendor, vendor)).map((i) => i.id) : [];
   const goneSet = new Set(gone);
   state.items = state.items.filter((i) => !goneSet.has(i.id));
   for (const id of gone) delete state.selected[id];
-  if (orders) state.orders = state.orders.filter((o) => o.vendor !== vendor);
+  if (orders) state.orders = state.orders.filter((o) => !same(o.vendor, vendor));
+  if (details) state.vendors = state.vendors.filter((v) => !same(v.name, vendor));
   commit();
   return gone;
 }
@@ -323,12 +324,6 @@ export function saveVendor(vendor, oldName = '') {
   if (i >= 0) state.vendors[i] = next; else state.vendors.push(next);
   commit();
   return { vendor: next };
-}
-
-// Removes only the details; the vendor's items and orders are kept.
-export function deleteVendor(id) {
-  state.vendors = state.vendors.filter((v) => v.id !== id);
-  commit();
 }
 
 // Merge CSV rows into vendor details, matching by Vendor Name (case-insensitive).

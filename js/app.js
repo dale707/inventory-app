@@ -291,7 +291,7 @@ function renderVendors() {
 
   $('#vendor-heading').textContent = !entry ? 'New vendor'
     : `${entry.name} · ${plural(entry.count, 'item')}${entry.record ? '' : ' · no details saved yet'}`;
-  $('#btn-delete-vendor').hidden = !entry?.record;
+  $('#btn-delete-vendor').hidden = !entry;
   $('#btn-vendor-items').hidden = !entry?.count;
   // Keep what's being typed; otherwise show the latest saved details (e.g. after an import).
   if (vendorFormKey !== view.vendorKey || !vendorDirty) fillVendorForm(entry);
@@ -343,14 +343,45 @@ $('#btn-revert-vendor').addEventListener('click', () => {
   renderVendors();
 });
 
+// ---------- Delete a vendor (Vendor tab only) ----------
+
+const vendorDeleteDialog = $('#vendor-delete-dialog');
+const vendorDeleteForm = $('#vendor-delete-form');
+let deletingVendor = ''; // name of the vendor the dialog is for
+
+// Ticks every part the vendor has; parts it doesn't have are hidden.
 $('#btn-delete-vendor').addEventListener('click', () => {
   const entry = vendorEntries().find((x) => x.key === view.vendorKey);
-  if (!entry?.record) return;
-  const kept = entry.count ? ` Its ${plural(entry.count, 'item')} and orders are kept (⋯ → Delete a vendor's data… removes those).` : '';
-  if (!confirm(`Delete the details of “${entry.name}”?${kept}`)) return;
+  if (!entry) return;
+  const { orders } = store.getState();
+  const orderCount = orders.filter((o) => o.vendor.toLowerCase() === entry.key).length;
+  const f = vendorDeleteForm.elements;
+  deletingVendor = entry.name;
+  $('#vendor-delete-name').textContent = entry.name;
+  $('#vendor-delete-items').textContent = `Inventory items (${entry.count})`;
+  $('#vendor-delete-orders').textContent = `Order history (${plural(orderCount, 'order')})`;
+  for (const [name, has] of [['details', !!entry.record], ['items', entry.count > 0], ['orders', orderCount > 0]]) {
+    f[name].checked = has;
+    f[name].closest('label').hidden = !has;
+  }
+  vendorDeleteDialog.showModal();
+});
+
+$('#btn-cancel-vendor-delete').addEventListener('click', () => vendorDeleteDialog.close());
+
+vendorDeleteForm.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const f = vendorDeleteForm.elements;
+  const opts = { details: f.details.checked, items: f.items.checked, orders: f.orders.checked };
+  if (!opts.details && !opts.items && !opts.orders) return alert('Tick what to delete.');
+  const what = [opts.details && 'details', opts.items && 'inventory items', opts.orders && 'order history']
+    .filter(Boolean).join(', ').replace(/, ([^,]*)$/, ' and $1');
+  if (!confirm(`Delete the ${what} of “${deletingVendor}”? This cannot be undone.`)) return;
   vendorDirty = false;
-  store.deleteVendor(entry.record.id);
-  toast('Vendor details deleted');
+  const gone = store.deleteVendorData(deletingVendor, opts);
+  gone.forEach((id) => images.deleteImage(id).catch(() => {}));
+  vendorDeleteDialog.close();
+  toast(`Deleted ${deletingVendor}'s ${what}`);
 });
 
 $('#btn-vendor-items').addEventListener('click', () => {
@@ -832,19 +863,6 @@ const menuActions = {
     lines.push('Tip: export inventory, photos, order history and vendors now and then as a backup.');
     alert(lines.join('\n\n'));
   },
-  'delete-vendor': () => {
-    const { items, orders } = store.getState();
-    const vendors = uniqueSorted([...items.map((i) => i.vendor), ...orders.map((o) => o.vendor)]);
-    const keys = items.some((i) => !i.vendor) ? [...vendors, NONE] : vendors;
-    if (!keys.length) return toast('No vendor data to delete');
-    const select = vendorDeleteForm.elements.vendor;
-    select.innerHTML = keys.map((k) => `<option value="${esc(k)}">${esc(vendorLabel(k))}</option>`).join('');
-    // Start on the vendor the Inventory pane is showing, if it's a real one.
-    if (keys.includes(view.inventoryVendor)) select.value = view.inventoryVendor;
-    vendorDeleteForm.elements.items.checked = vendorDeleteForm.elements.orders.checked = true;
-    updateVendorDeleteCounts();
-    vendorDeleteDialog.showModal();
-  },
   reset: () => {
     if (confirm('Erase ALL inventory, selections, order history and vendors on this device? This cannot be undone.')) {
       store.resetAll();
@@ -862,36 +880,6 @@ menuDialog.addEventListener('click', (e) => {
   if (!action) return;
   menuDialog.close();
   menuActions[action]();
-});
-
-// ---------- Delete one vendor's data ----------
-
-const vendorDeleteDialog = $('#vendor-delete-dialog');
-const vendorDeleteForm = $('#vendor-delete-form');
-const vendorOf = (key) => (key === NONE ? '' : key);
-
-function updateVendorDeleteCounts() {
-  const vendor = vendorOf(vendorDeleteForm.elements.vendor.value);
-  const { items, orders } = store.getState();
-  $('#vendor-delete-items').textContent = `Inventory items (${items.filter((i) => i.vendor === vendor).length})`;
-  $('#vendor-delete-orders').textContent = `Order history (${plural(orders.filter((o) => o.vendor === vendor).length, 'order')})`;
-}
-
-vendorDeleteForm.elements.vendor.addEventListener('change', updateVendorDeleteCounts);
-$('#btn-cancel-vendor-delete').addEventListener('click', () => vendorDeleteDialog.close());
-
-vendorDeleteForm.addEventListener('submit', (e) => {
-  e.preventDefault();
-  const f = vendorDeleteForm.elements;
-  const key = f.vendor.value;
-  const opts = { items: f.items.checked, orders: f.orders.checked };
-  if (!opts.items && !opts.orders) return alert('Tick what to delete.');
-  const what = [opts.items && 'inventory items', opts.orders && 'order history'].filter(Boolean).join(' and ');
-  if (!confirm(`Delete all ${what} of “${vendorLabel(key)}”? This cannot be undone.`)) return;
-  const gone = store.deleteVendorData(vendorOf(key), opts);
-  gone.forEach((id) => images.deleteImage(id).catch(() => {}));
-  vendorDeleteDialog.close();
-  toast(`Deleted ${vendorLabel(key)}'s ${what}`);
 });
 
 csvInput.addEventListener('change', async () => {

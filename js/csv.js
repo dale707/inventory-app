@@ -27,7 +27,7 @@ const VENDOR_COLUMNS = {
   phone: ['phonenum', 'phone num', 'phone', 'phone number', 'tel', 'telephone'],
   email: ['email', 'e mail', 'email address', 'mail'],
   sales: ['sales', 'salesperson', 'sales person', 'sales rep', 'contact'],
-  remarks1: ['remarks 1', 'remarks1', 'remarks', 'remark', 'notes', 'note', 'comments'],
+  remarks: ['remarks', 'remarks 1', 'remarks1', 'remark', 'notes', 'note', 'comments'],
 };
 
 const normHeader = (h) => h.trim().toLowerCase().replace(/[\s_-]+/g, ' ');
@@ -87,7 +87,7 @@ export function rowsToVendors(rows) {
   if (rows.length < 2) return { error: 'The file needs a header row and at least one vendor row.' };
   const idx = columnIndex(rows[0], VENDOR_COLUMNS);
   if (idx.name === undefined) {
-    return { error: 'No "Vendor Name" column found.\nExpected headers: Vendor Name, Alias 1, Alias 2, Howto Order, BookLatestDate, DeliveryDate, PhoneNum, Email, Sales, Remarks 1' };
+    return { error: 'No "Vendor Name" column found.\nExpected headers: Vendor Name, Alias 1, Alias 2, Howto Order, BookLatestDate, DeliveryDate, PhoneNum, Email, Sales, Remarks' };
   }
   const vendors = [];
   let skipped = 0;
