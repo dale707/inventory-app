@@ -19,8 +19,8 @@ const COLUMNS = {
 // Same for vendor details.
 const VENDOR_COLUMNS = {
   name: ['vendor name', 'vendorname', 'vendor', 'name', 'supplier', 'supplier name'],
-  alias1: ['alias 1', 'alias1', 'alias'],
-  alias2: ['alias 2', 'alias2'],
+  alias1: ['full name', 'fullname', 'alias 1', 'alias1'],
+  alias2: ['alias', 'alias 2', 'alias2'],
   howToOrder: ['howto order', 'how to order', 'howtoorder', 'order method', 'ordering'],
   bookLatestDate: ['booklatestdate', 'book latest date', 'latest booking date', 'order by', 'cutoff', 'cut off'],
   deliveryDate: ['deliverydate', 'delivery date', 'delivery', 'delivery day'],
@@ -87,7 +87,7 @@ export function rowsToVendors(rows) {
   if (rows.length < 2) return { error: 'The file needs a header row and at least one vendor row.' };
   const idx = columnIndex(rows[0], VENDOR_COLUMNS);
   if (idx.name === undefined) {
-    return { error: 'No "Vendor Name" column found.\nExpected headers: Vendor Name, Alias 1, Alias 2, Howto Order, BookLatestDate, DeliveryDate, PhoneNum, Email, Sales, Remarks' };
+    return { error: 'No "Vendor Name" column found.\nExpected headers: Vendor Name, Full name, Alias, Howto Order, BookLatestDate, DeliveryDate, Sales, PhoneNum, Email, Remarks' };
   }
   const vendors = [];
   let skipped = 0;

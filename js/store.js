@@ -8,7 +8,7 @@
 //   orders:   [{ id, orderNo, vendor, createdAt, lines: [{ itemId, code, brand, name1, name2, size, orderUnit, qty }] }]  newest first
 //   daySeq:   { date: 'YYYYMMDD', n }  last order sequence number used on that date
 //   codeSeq:  last number used for auto-assigned item IDs (0001, 0002, ...)
-//   vendors:  [{ id, name, alias1, alias2, howToOrder, bookLatestDate, deliveryDate, phone, email, sales, remarks }]
+//   vendors:  [{ id, name, alias1, alias2, howToOrder, bookLatestDate, deliveryDate, sales, phone, email, remarks }]
 //             vendor details; items/orders refer to a vendor by name (case-insensitive)
 
 const KEY = 'inventoryapp.v1';
@@ -27,13 +27,13 @@ export const FIELD_LABELS = {
   size: 'Size', orderUnit: 'Order Unit', vendor: 'Vendor', remarks: 'Remarks',
 };
 
-export const VENDOR_FIELDS = ['name', 'alias1', 'alias2', 'howToOrder', 'bookLatestDate', 'deliveryDate', 'phone', 'email', 'sales', 'remarks'];
+export const VENDOR_FIELDS = ['name', 'alias1', 'alias2', 'howToOrder', 'bookLatestDate', 'deliveryDate', 'sales', 'phone', 'email', 'remarks'];
 
 // Column headers used for vendor CSV export (import also accepts these, see csv.js).
 export const VENDOR_LABELS = {
-  name: 'Vendor Name', alias1: 'Alias 1', alias2: 'Alias 2', howToOrder: 'Howto Order',
-  bookLatestDate: 'BookLatestDate', deliveryDate: 'DeliveryDate', phone: 'PhoneNum', email: 'Email',
-  sales: 'Sales', remarks: 'Remarks',
+  name: 'Vendor Name', alias1: 'Full name', alias2: 'Alias', howToOrder: 'Howto Order',
+  bookLatestDate: 'BookLatestDate', deliveryDate: 'DeliveryDate', sales: 'Sales', phone: 'PhoneNum',
+  email: 'Email', remarks: 'Remarks',
 };
 
 const emptyState = () => ({ items: [], selected: {}, orders: [], daySeq: { date: '', n: 0 }, codeSeq: 0, vendors: [] });
