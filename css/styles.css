@@ -305,3 +305,12 @@ dialog label.check input { width: 22px; height: 22px; margin: 0; padding: 0; acc
 .form-card { padding: 16px; background: var(--surface); border-radius: var(--radius); }
 .vendor.no-details span { font-style: italic; opacity: .75; }
 .pane-empty { margin: 0; padding: 14px; color: var(--muted); font-size: 14px; }
+
+/* Edit lists dialog (Brand, Category, Order Unit) */
+.option-list { list-style: none; margin: 0 0 12px; padding: 0; max-height: 45dvh; overflow-y: auto; }
+.option-list li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--border); }
+.option-list .option-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.option-list small { color: var(--muted); white-space: nowrap; }
+.option-list .empty { padding: 16px 0; justify-content: center; }
+.option-add { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.option-add input { margin: 0; }

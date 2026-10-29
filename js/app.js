@@ -131,10 +131,6 @@ function renderInventory() {
   const cat = cats.includes(filter.value) ? filter.value : '';
   filter.innerHTML = `<option value="">All categories</option>` +
     cats.map((c) => `<option${c === cat ? ' selected' : ''}>${esc(c)}</option>`).join('');
-  $('#category-list').innerHTML = datalist(cats);
-  $('#brand-list').innerHTML = datalist(uniqueSorted(items.map((i) => i.brand)));
-  $('#unit-list').innerHTML = datalist(uniqueSorted(items.map((i) => i.orderUnit)));
-  $('#vendor-list').innerHTML = datalist(knownVendors());
 
   const q = $('#search').value.trim().toLowerCase();
   const matches = (i) => [i.name1, i.name2, i.remarks, i.vendor, i.code, i.brand]
@@ -398,6 +394,7 @@ function render() {
   renderSelected();
   renderHistory();
   renderVendors();
+  renderOptions();
   loadThumbs();
 }
 
@@ -435,16 +432,50 @@ function resetPhoto() {
   photo = { blob: null, removed: false, tempUrl: null };
 }
 
+// Brand, Category, Order Unit and Vendor are picked from lists: the first three from the
+// editable lists (⋯ → Edit lists), Vendor from the Vendor tab. "Add new…" extends the list.
+const ADD_NEW = '\uE000add';
+const CHOICE_LABELS = { brand: 'Brand', category: 'Category', orderUnit: 'Order Unit', vendor: 'vendor name' };
+const choices = (field) => (field === 'vendor' ? vendorEntries().map((e) => e.name) : store.getState().options[field]);
+
+// Selects value (matched case-insensitively). A value not in the list is kept as an extra
+// option, so saving the item doesn't lose it.
+function fillChoice(sel, field, value) {
+  const list = choices(field);
+  const match = list.find((v) => v.toLowerCase() === value.toLowerCase());
+  const opt = (v, label = v) => `<option value="${esc(v)}">${esc(label)}</option>`;
+  sel.innerHTML = opt('', field === 'vendor' ? 'No vendor' : '—') +
+    list.map((v) => opt(v)).join('') +
+    (value && !match ? opt(value, `${value} (${field === 'vendor' ? 'new' : 'not in list'})`) : '') +
+    opt(ADD_NEW, field === 'vendor' ? 'New vendor…' : 'Add new…');
+  sel.value = match ?? value;
+  sel.dataset.prev = sel.value;
+}
+
+itemForm.addEventListener('change', (e) => {
+  const sel = e.target;
+  if (sel.tagName !== 'SELECT') return;
+  if (sel.value !== ADD_NEW) return void (sel.dataset.prev = sel.value);
+  const name = prompt(`New ${CHOICE_LABELS[sel.name]}`)?.trim();
+  // A new vendor shows up in the Vendor tab once an item uses it.
+  const value = !name ? sel.dataset.prev : sel.name === 'vendor' ? name : store.addOption(sel.name, name);
+  fillChoice(sel, sel.name, value);
+});
+
 async function openItemDialog(id) {
   const item = id ? store.getItem(id) : null;
   editingId = item?.id ?? null;
   $('#item-dialog-title').textContent = item ? 'Edit Item' : 'Add Item';
   $('#btn-delete-item').hidden = !item;
   $('#btn-copy-item').hidden = !item;
-  for (const field of store.ITEM_FIELDS) itemForm.elements[field].value = item ? item[field] : '';
-  itemForm.elements.noMore.checked = !!item?.noMore;
   const v = view.inventoryVendor;
-  if (!item && v !== ALL && v !== NONE) itemForm.elements.vendor.value = v;
+  const defaults = { orderUnit: store.DEFAULT_ORDER_UNIT, vendor: v !== ALL && v !== NONE ? v : '' };
+  for (const field of store.ITEM_FIELDS) {
+    const el = itemForm.elements[field];
+    const value = item ? item[field] : defaults[field] ?? '';
+    if (el.tagName === 'SELECT') fillChoice(el, field, value); else el.value = value;
+  }
+  itemForm.elements.noMore.checked = !!item?.noMore;
   itemForm.elements.code.placeholder = item ? '' : `Auto: ${store.peekNextCode()}`;
   resetPhoto();
   showPhoto(null);
@@ -564,6 +595,60 @@ copyForm.addEventListener('submit', async (e) => {
   view.inventoryVendor = copy.vendor;
   render();
   toast(`Copied ${copy.code} “${copy.name1}” to ${copy.vendor}`);
+});
+
+// ---------- Edit lists (Brand, Category, Order Unit) ----------
+
+const optionsDialog = $('#options-dialog');
+const optionsField = $('#options-field');
+const optionInput = $('#option-new');
+
+function renderOptions() {
+  if (!optionsDialog.open) return;
+  const field = optionsField.value;
+  $('#options-list').innerHTML = store.getState().options[field].map((v) => `
+    <li data-value="${esc(v)}">
+      <span class="option-name">${esc(v)}</span>
+      <small>${plural(store.optionUsage(field, v), 'item')}</small>
+      <button type="button" class="btn small" data-option="rename">Rename</button>
+      <button type="button" class="btn small danger" data-option="delete">Delete</button>
+    </li>`).join('') || '<li class="empty">No entries yet</li>';
+}
+
+optionsField.addEventListener('change', renderOptions);
+$('#btn-close-options').addEventListener('click', () => optionsDialog.close());
+
+$('#options-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const field = optionsField.value;
+  const value = optionInput.value.trim();
+  if (!value) return optionInput.focus();
+  const exists = store.getState().options[field].some((o) => o.toLowerCase() === value.toLowerCase());
+  store.addOption(field, value);
+  if (exists) toast(`“${value}” is already in the list`);
+  optionInput.value = '';
+  renderOptions();
+});
+
+$('#options-list').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-option]');
+  if (!btn) return;
+  const field = optionsField.value;
+  const list = optionsField.selectedOptions[0].text;
+  const value = btn.closest('[data-value]').dataset.value;
+  const n = store.optionUsage(field, value);
+  if (btn.dataset.option === 'delete') {
+    const note = n ? `\nThe ${plural(n, 'item')} using it keep it.` : '';
+    if (confirm(`Delete “${value}” from the ${list} list?${note}`)) store.deleteOption(field, value);
+    return;
+  }
+  const name = prompt(`Rename “${value}”${n ? ` (also on its ${plural(n, 'item')})` : ''}`, value)?.trim();
+  if (!name || name === value) return;
+  const other = store.getState().options[field].find((o) =>
+    o.toLowerCase() === name.toLowerCase() && o.toLowerCase() !== value.toLowerCase());
+  if (other && !confirm(`“${other}” is already in the list. Merge “${value}” into it?`)) return;
+  const result = store.renameOption(field, value, name);
+  if (result.error) alert(result.error);
 });
 
 // ---------- Full-size photo ----------
@@ -837,6 +922,11 @@ const menuActions = {
     const { orders } = store.getState();
     if (!orders.length) return toast('No orders to export');
     saveFile(`orders-${today()}.csv`, ordersCsv(orders));
+  },
+  options: () => {
+    optionInput.value = '';
+    optionsDialog.showModal();
+    renderOptions();
   },
   'import-vendors': () => vendorCsvInput.click(),
   'export-vendors': () => {

@@ -10,6 +10,8 @@
 //   codeSeq:  last number used for auto-assigned item IDs (0001, 0002, ...)
 //   vendors:  [{ id, name, alias1, alias2, howToOrder, bookLatestDate, deliveryDate, sales, phone, email, remarks }]
 //             vendor details; items/orders refer to a vendor by name (case-insensitive)
+//   options:  { brand: [], category: [], orderUnit: [] }  choices offered in the item dialog,
+//             sorted, unique case-insensitively (items may still hold values not in the list)
 
 const KEY = 'inventoryapp.v1';
 const listeners = [];
@@ -36,13 +38,33 @@ export const VENDOR_LABELS = {
   email: 'Email', remarks: 'Remarks',
 };
 
-const emptyState = () => ({ items: [], selected: {}, orders: [], daySeq: { date: '', n: 0 }, codeSeq: 0, vendors: [] });
+// Fields whose values are picked from an editable list (⋯ → Edit lists).
+export const OPTION_FIELDS = ['brand', 'category', 'orderUnit'];
+export const DEFAULT_ORDER_UNIT = 'case';
+
+const byName = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' });
+// Unique (case-insensitively, first spelling wins) and sorted.
+const uniqueValues = (values) => {
+  const seen = new Map();
+  for (const v of values.map(clean)) if (v && !seen.has(v.toLowerCase())) seen.set(v.toLowerCase(), v);
+  return [...seen.values()].sort(byName);
+};
+// Lists seeded from the values items already use; Order Unit always offers the default.
+const seedOptions = (items) => Object.fromEntries(OPTION_FIELDS.map((f) =>
+  [f, uniqueValues([...items.map((i) => i[f]), ...(f === 'orderUnit' ? [DEFAULT_ORDER_UNIT] : [])])]));
+
+const emptyState = () => ({
+  items: [], selected: {}, orders: [], daySeq: { date: '', n: 0 }, codeSeq: 0, vendors: [], options: seedOptions([]),
+});
 
 function load() {
   let raw = null;
   try {
     raw = localStorage.getItem(KEY);
-    if (raw) return migrate({ ...emptyState(), ...JSON.parse(raw) });
+    if (raw) {
+      const saved = JSON.parse(raw);
+      return migrate({ ...emptyState(), ...saved, options: saved.options });
+    }
   } catch (e) {
     console.error('Failed to load saved data', e);
     // Keep the unreadable data so the next save doesn't destroy it.
@@ -76,6 +98,10 @@ function migrate(s) {
   }));
   for (const o of s.orders) if (!('vendor' in o)) o.vendor = o.orderNo.match(/^(.*)-\d{8}-\d{3,}$/)?.[1] ?? '';
   s.vendors = s.vendors.map((v) => normalizeVendor({ remarks: v.remarks1, ...v })); // remarks1 → remarks
+  if (!s.options) {
+    s.options = seedOptions(s.items);
+    migrated = true;
+  }
   delete s.nextOrderNo;
   delete s.lastPrefix;
   const numericCodes = s.items.map((i) => (/^\d+$/.test(i.code) ? Number(i.code) : 0));
@@ -145,6 +171,7 @@ export const onChange = (fn) => listeners.push(fn);
 export const getItem = (id) => state.items.find((i) => i.id === id);
 export const peekNextCode = () => nextFreeCode(state).code;
 const same = (a, b) => a.toLowerCase() === b.toLowerCase();
+const findOption = (field, value) => state.options[field].find((o) => same(o, clean(value)));
 
 // The item (other than exceptId) that already has this ID under this vendor, if any.
 export const findDuplicate = (code, vendor, exceptId) => state.items.find((i) =>
@@ -202,9 +229,12 @@ export function importItems(rows) {
     const sibling = !r.code && state.items.find((i) => same(i.name1, r.name1));
     const item = normalize({ ...r, name1: r.name1 || r.code, code: r.code || sibling?.code });
     if (!item.code) item.code = assignCode(state);
+    if (!item.orderUnit) item.orderUnit = DEFAULT_ORDER_UNIT;
     state.items.push(item);
     added++;
   }
+  // Values new to the Brand/Category/Order Unit lists are added to them.
+  for (const f of OPTION_FIELDS) state.options[f] = uniqueValues([...state.options[f], ...rows.map((r) => r[f] ?? '')]);
   commit();
   return { added, updated };
 }
@@ -342,6 +372,38 @@ export function importVendors(rows) {
   commit();
   return { added, updated };
 }
+
+// ---------- Brand / Category / Order Unit lists ----------
+
+// Adds a value to a field's list. Returns the value as listed (an existing entry that
+// differs only in case is reused), or '' if blank.
+export function addOption(field, value) {
+  const existing = findOption(field, value);
+  if (existing || !clean(value)) return existing ?? '';
+  state.options[field] = uniqueValues([...state.options[field], value]);
+  commit();
+  return clean(value);
+}
+
+// Renames a list entry and every item using it. Renaming onto another existing entry merges
+// the two. Returns { value } or { error }.
+export function renameOption(field, oldValue, newValue) {
+  const existing = findOption(field, newValue);
+  const next = existing && !same(existing, oldValue) ? existing : clean(newValue); // allow case-only changes
+  if (!next) return { error: 'The name cannot be empty.' };
+  for (const i of state.items) if (same(i[field], oldValue)) i[field] = next;
+  state.options[field] = uniqueValues([next, ...state.options[field].filter((o) => !same(o, oldValue))]);
+  commit();
+  return { value: next };
+}
+
+// Removes a list entry. Items using it keep their value.
+export function deleteOption(field, value) {
+  state.options[field] = state.options[field].filter((o) => !same(o, value));
+  commit();
+}
+
+export const optionUsage = (field, value) => state.items.filter((i) => same(i[field], value)).length;
 
 export function resetAll() {
   state = emptyState();

@@ -133,16 +133,16 @@
       </div>
       <div class="field-row">
         <label>ID<input name="code" readonly tabindex="-1"></label>
-        <label>Brand<input name="brand" list="brand-list" autocomplete="off"></label>
+        <label>Brand<select name="brand"></select></label>
       </div>
-      <label>Category<input name="category" list="category-list" autocomplete="off"></label>
+      <label>Category<select name="category"></select></label>
       <label>Name1<input name="name1" required autocomplete="off"></label>
       <label>Name2<input name="name2" autocomplete="off"></label>
       <div class="field-row">
         <label>Size<input name="size" autocomplete="off"></label>
-        <label>Order Unit<input name="orderUnit" list="unit-list" placeholder="e.g. box, case" autocomplete="off"></label>
+        <label>Order Unit<select name="orderUnit"></select></label>
       </div>
-      <label>Vendor<input name="vendor" list="vendor-list" autocomplete="off"></label>
+      <label>Vendor<select name="vendor"></select></label>
       <label>Remarks<textarea name="remarks" rows="2"></textarea></label>
       <label class="check"><input type="checkbox" name="noMore">No More</label>
       <div class="dialog-actions">
@@ -154,10 +154,6 @@
       </div>
     </form>
   </dialog>
-  <datalist id="category-list"></datalist>
-  <datalist id="brand-list"></datalist>
-  <datalist id="unit-list"></datalist>
-  <datalist id="vendor-list"></datalist>
 
   <dialog id="copy-dialog">
     <form id="copy-form">
@@ -197,6 +193,7 @@
       <button data-menu="export-photos">Export photos (ZIP)</button>
       <button data-menu="export-inventory">Export inventory CSV</button>
       <button data-menu="export-orders">Export order history CSV</button>
+      <button data-menu="options">Edit lists (Brand, Category, Order Unit)</button>
       <button data-menu="import-vendors">Import vendors from CSV</button>
       <button data-menu="export-vendors">Export vendors CSV</button>
       <button data-menu="storage">Storage status</button>
@@ -205,6 +202,27 @@
     <div class="sheet-group">
       <button data-menu="close" class="bold">Cancel</button>
     </div>
+  </dialog>
+
+  <dialog id="options-dialog" class="wide">
+    <form id="options-form">
+      <h2>Edit Lists</h2>
+      <label>List<select id="options-field">
+        <option value="brand">Brand</option>
+        <option value="category">Category</option>
+        <option value="orderUnit">Order Unit</option>
+      </select></label>
+      <ul id="options-list" class="option-list"></ul>
+      <div class="option-add">
+        <input id="option-new" placeholder="New entry" autocomplete="off" enterkeyhint="done" aria-label="New entry">
+        <button type="submit" class="btn">Add</button>
+      </div>
+      <p class="dialog-note">These are the choices in the item form. Renaming an entry renames it on every item; deleting it leaves items as they are.</p>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" id="btn-close-options" class="btn primary">Done</button>
+      </div>
+    </form>
   </dialog>
 
   <dialog id="vendor-delete-dialog">
