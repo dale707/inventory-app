@@ -304,6 +304,11 @@ dialog label.check input { width: 22px; height: 22px; margin: 0; padding: 0; acc
 /* Vendors tab: details form on the right */
 .form-card { padding: 16px; background: var(--surface); border-radius: var(--radius); }
 .vendor.no-details span { font-style: italic; opacity: .75; }
+.field-label { margin-bottom: 4px; font-size: 14px; color: var(--muted); }
+.vendor-photos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+.vendor-photo { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.vendor-photo .photo-preview { width: 100%; height: auto; aspect-ratio: 1; }
+.vendor-photo .btn { width: 100%; padding: 0 6px; white-space: nowrap; }
 .pane-empty { margin: 0; padding: 14px; color: var(--muted); font-size: 14px; }
 
 /* Edit lists dialog (Brand, Category, Order Unit) */

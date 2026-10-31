@@ -267,6 +267,101 @@ function fillVendorForm(entry) {
   if (entry && !entry.record) vendorForm.elements.name.value = entry.name;
   vendorFormKey = view.vendorKey;
   vendorDirty = false;
+  loadVendorPhotos(entry?.record);
+}
+
+// ---------- Vendor photos (VENDOR_PHOTO_COUNT slots in the form; applied on Save) ----------
+
+const vendorPhotoEls = [...document.querySelectorAll('#vendor-photos .vendor-photo')];
+const emptySlot = () => ({ blob: null, removed: false, tempUrl: null, url: null });
+let vendorPhotos = vendorPhotoEls.map(emptySlot); // staged changes + what each slot shows
+let vendorPhotoLoad = 0; // ignores loads finishing after the form moved on
+let vendorPhotoSlot = 0; // slot the file picker is for
+
+function showVendorPhoto(n, url) {
+  const el = vendorPhotoEls[n];
+  const img = el.querySelector('img');
+  vendorPhotos[n].url = url;
+  img.hidden = !url;
+  if (url) img.src = url; else img.removeAttribute('src');
+  el.querySelector('span').hidden = !!url;
+  el.querySelector('[data-photo="remove"]').hidden = !url;
+}
+
+function resetVendorPhoto(n) {
+  if (vendorPhotos[n].tempUrl) URL.revokeObjectURL(vendorPhotos[n].tempUrl);
+  vendorPhotos[n] = emptySlot();
+  showVendorPhoto(n, null);
+}
+
+function loadVendorPhotos(record) {
+  const token = ++vendorPhotoLoad;
+  vendorPhotos.forEach((_, n) => {
+    resetVendorPhoto(n);
+    const stamp = record?.imgs[n];
+    if (!stamp) return;
+    const key = store.vendorImageKey(record.id, n);
+    const hit = images.cachedUrl(key, stamp);
+    if (hit) return showVendorPhoto(n, hit);
+    images.imageUrl(key, stamp).then((url) => {
+      if (url && token === vendorPhotoLoad) showVendorPhoto(n, url);
+    });
+  });
+}
+
+const vendorPhotoInput = $('#vendor-photo-input');
+const vendorCameraInput = $('#vendor-camera-input');
+
+$('#vendor-photos').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-photo]');
+  if (!btn) return;
+  const n = vendorPhotoEls.indexOf(btn.closest('.vendor-photo'));
+  const action = btn.dataset.photo;
+  if (action === 'view' && vendorPhotos[n].url) {
+    const name = vendorForm.elements.name.value.trim() || 'vendor';
+    return showLightbox(vendorPhotos[n].url, `${safeFileName(name)}-${n + 1}.jpg`);
+  }
+  if (action === 'remove') {
+    resetVendorPhoto(n);
+    vendorPhotos[n].removed = true;
+    vendorDirty = true;
+    return;
+  }
+  vendorPhotoSlot = n;
+  (action === 'camera' ? vendorCameraInput : vendorPhotoInput).click();
+});
+
+async function onVendorPhotoPicked(input) {
+  const n = vendorPhotoSlot;
+  const blob = await readPickedImage(input);
+  if (!blob) return;
+  resetVendorPhoto(n);
+  vendorPhotos[n].blob = blob;
+  vendorPhotos[n].tempUrl = URL.createObjectURL(blob);
+  showVendorPhoto(n, vendorPhotos[n].tempUrl);
+  vendorDirty = true;
+}
+vendorPhotoInput.addEventListener('change', () => onVendorPhotoPicked(vendorPhotoInput));
+vendorCameraInput.addEventListener('change', () => onVendorPhotoPicked(vendorCameraInput));
+
+// Stores/deletes the staged blobs of a saved vendor, then records the new stamps.
+async function saveVendorPhotos(vendor, staged) {
+  const imgs = [...vendor.imgs];
+  try {
+    for (const [n, p] of staged.entries()) {
+      const key = store.vendorImageKey(vendor.id, n);
+      if (p.blob) {
+        await images.putImage(key, p.blob);
+        imgs[n] = images.newStamp();
+      } else if (p.removed && imgs[n]) {
+        await images.deleteImage(key);
+        imgs[n] = '';
+      }
+    }
+  } catch (err) {
+    alert(`Could not save the photos (${err?.message || err}). Storage may be full.`);
+  }
+  if (imgs.some((v, n) => v !== vendor.imgs[n])) store.setVendorImages(vendor.id, imgs);
 }
 
 function renderVendors() {
@@ -314,13 +409,15 @@ $('#vendor-pane').addEventListener('click', (e) => {
 
 $('#vendor-search').addEventListener('input', renderVendors);
 
-vendorForm.addEventListener('submit', (e) => {
+vendorForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const entry = vendorEntries().find((x) => x.key === vendorFormKey);
-  const values = { id: entry?.record?.id };
+  const values = { id: entry?.record?.id, imgs: entry?.record?.imgs ?? [] };
   for (const f of store.VENDOR_FIELDS) values[f] = vendorForm.elements[f].value;
   const renamed = entry && entry.name !== values.name.trim() && entry.count;
   if (renamed && !confirm(`Rename “${entry.name}” to “${values.name.trim()}” on its ${plural(entry.count, 'item')} and orders too?`)) return;
+  // Taken first: saving re-renders, which may refill the form and reset the staged photos.
+  const staged = vendorPhotos.map(({ blob, removed }) => ({ blob, removed }));
   const result = store.saveVendor(values, entry?.name);
   if (result.error) {
     alert(result.error);
@@ -331,6 +428,7 @@ vendorForm.addEventListener('submit', (e) => {
   vendorFormKey = null; // refill from the saved record
   render();
   toast(`Saved ${result.vendor.name}`);
+  await saveVendorPhotos(result.vendor, staged);
 });
 
 $('#btn-revert-vendor').addEventListener('click', () => {
@@ -490,19 +588,26 @@ $('#photo-preview').addEventListener('click', () => photoInput.click());
 $('#btn-photo-library').addEventListener('click', () => photoInput.click());
 $('#btn-photo-camera').addEventListener('click', () => cameraInput.click());
 
-async function onPhotoPicked(input) {
+// The picked file, downscaled; null if none was picked or it isn't an image.
+async function readPickedImage(input) {
   const file = input.files[0];
   input.value = '';
-  if (!file) return;
+  if (!file) return null;
   try {
-    const blob = await images.resizeImage(file);
-    resetPhoto();
-    photo.blob = blob;
-    photo.tempUrl = URL.createObjectURL(blob);
-    showPhoto(photo.tempUrl);
+    return await images.resizeImage(file);
   } catch {
     alert('That file could not be read as an image.');
+    return null;
   }
+}
+
+async function onPhotoPicked(input) {
+  const blob = await readPickedImage(input);
+  if (!blob) return;
+  resetPhoto();
+  photo.blob = blob;
+  photo.tempUrl = URL.createObjectURL(blob);
+  showPhoto(photo.tempUrl);
 }
 photoInput.addEventListener('change', () => onPhotoPicked(photoInput));
 cameraInput.addEventListener('change', () => onPhotoPicked(cameraInput));
@@ -654,15 +759,18 @@ $('#options-list').addEventListener('click', (e) => {
 // ---------- Full-size photo ----------
 
 const imageDialog = $('#image-dialog');
-let viewingId = null;
+let viewing = null; // { url, fileName } shown in the lightbox
+
+function showLightbox(url, fileName) {
+  viewing = { url, fileName };
+  imageDialog.querySelector('img').src = url;
+  imageDialog.showModal();
+}
 
 async function viewImage(id) {
   const item = store.getItem(id);
   const url = item?.img && await images.imageUrl(item.id, item.img);
-  if (!url) return;
-  viewingId = id;
-  imageDialog.querySelector('img').src = url;
-  imageDialog.showModal();
+  if (url) showLightbox(url, `${safeFileName(item.code || item.name1)}.jpg`);
 }
 
 imageDialog.addEventListener('click', (e) => {
@@ -670,9 +778,9 @@ imageDialog.addEventListener('click', (e) => {
 });
 $('#btn-close-photo').addEventListener('click', () => imageDialog.close());
 $('#btn-save-photo').addEventListener('click', async () => {
-  const item = store.getItem(viewingId);
-  const blob = item && await images.getImage(item.id);
-  if (blob) saveFile(`${safeFileName(item.code || item.name1)}.jpg`, blob);
+  if (!viewing) return;
+  const blob = await fetch(viewing.url).then((r) => r.blob()).catch(() => null);
+  if (blob) saveFile(viewing.fileName, blob);
 });
 
 // ---------- Place order dialog ----------

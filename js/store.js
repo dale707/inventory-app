@@ -8,8 +8,9 @@
 //   orders:   [{ id, orderNo, vendor, createdAt, lines: [{ itemId, code, brand, name1, name2, size, orderUnit, qty }] }]  newest first
 //   daySeq:   { date: 'YYYYMMDD', n }  last order sequence number used on that date
 //   codeSeq:  last number used for auto-assigned item IDs (0001, 0002, ...)
-//   vendors:  [{ id, name, alias1, alias2, howToOrder, bookLatestDate, deliveryDate, sales, phone, email, remarks }]
-//             vendor details; items/orders refer to a vendor by name (case-insensitive)
+//   vendors:  [{ id, name, alias1, alias2, howToOrder, bookLatestDate, deliveryDate, sales, phone, email, remarks, imgs }]
+//             vendor details; items/orders refer to a vendor by name (case-insensitive);
+//             imgs: VENDOR_PHOTO_COUNT photo stamps ('' = empty slot), blobs keyed by vendorImageKey()
 //   options:  { brand: [], category: [], orderUnit: [] }  choices offered in the item dialog,
 //             sorted, unique case-insensitively (items may still hold values not in the list)
 
@@ -30,6 +31,10 @@ export const FIELD_LABELS = {
 };
 
 export const VENDOR_FIELDS = ['name', 'alias1', 'alias2', 'howToOrder', 'bookLatestDate', 'deliveryDate', 'sales', 'phone', 'email', 'remarks'];
+
+// Photo slots per vendor. Their blobs live in IndexedDB (images.js) under vendorImageKey().
+export const VENDOR_PHOTO_COUNT = 3;
+export const vendorImageKey = (vendorId, slot) => `vendor:${vendorId}:${slot}`;
 
 // Column headers used for vendor CSV export (import also accepts these, see csv.js).
 export const VENDOR_LABELS = {
@@ -158,6 +163,7 @@ function normalize(item) {
 function normalizeVendor(vendor) {
   const out = { id: vendor.id || uid() };
   for (const f of VENDOR_FIELDS) out[f] = clean(vendor[f]);
+  out.imgs = Array.from({ length: VENDOR_PHOTO_COUNT }, (_, n) => clean(vendor.imgs?.[n]));
   return out;
 }
 
@@ -315,14 +321,20 @@ export function reorder(id) {
 }
 
 // Removes a vendor's details, items and/or orders (matched by name, case-insensitively), plus
-// those items' selections. Returns the deleted item ids (the caller deletes their photos).
+// those items' selections. Returns the image keys to delete: the deleted items' ids, plus the
+// vendor's photo keys when its details go.
 export function deleteVendorData(vendor, { details = true, items = true, orders = true } = {}) {
   const gone = items ? state.items.filter((i) => same(i.vendor, vendor)).map((i) => i.id) : [];
   const goneSet = new Set(gone);
   state.items = state.items.filter((i) => !goneSet.has(i.id));
   for (const id of gone) delete state.selected[id];
   if (orders) state.orders = state.orders.filter((o) => !same(o.vendor, vendor));
-  if (details) state.vendors = state.vendors.filter((v) => !same(v.name, vendor));
+  if (details) {
+    for (const v of state.vendors) {
+      if (same(v.name, vendor)) v.imgs.forEach((stamp, n) => stamp && gone.push(vendorImageKey(v.id, n)));
+    }
+    state.vendors = state.vendors.filter((v) => !same(v.name, vendor));
+  }
   commit();
   return gone;
 }
@@ -354,6 +366,14 @@ export function saveVendor(vendor, oldName = '') {
   if (i >= 0) state.vendors[i] = next; else state.vendors.push(next);
   commit();
   return { vendor: next };
+}
+
+// Sets a saved vendor's photo stamps (after the caller stored/deleted the blobs).
+export function setVendorImages(id, imgs) {
+  const v = getVendor(id);
+  if (!v) return;
+  v.imgs = Array.from({ length: VENDOR_PHOTO_COUNT }, (_, n) => clean(imgs[n]));
+  commit();
 }
 
 // Merge CSV rows into vendor details, matching by Vendor Name (case-insensitive).

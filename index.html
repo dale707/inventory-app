@@ -85,6 +85,27 @@
             <label>Email<input name="email" inputmode="email" autocapitalize="off" autocomplete="off"></label>
           </div>
           <label>Remarks<textarea name="remarks" rows="3"></textarea></label>
+          <div class="field-label">Photos</div>
+          <div id="vendor-photos" class="vendor-photos">
+            <div class="vendor-photo">
+              <button type="button" class="photo-preview" data-photo="view" aria-label="Photo 1"><img alt="" hidden><span>Photo 1</span></button>
+              <button type="button" class="btn small" data-photo="camera">Camera</button>
+              <button type="button" class="btn small" data-photo="library">Choose</button>
+              <button type="button" class="btn small danger" data-photo="remove" hidden>Remove</button>
+            </div>
+            <div class="vendor-photo">
+              <button type="button" class="photo-preview" data-photo="view" aria-label="Photo 2"><img alt="" hidden><span>Photo 2</span></button>
+              <button type="button" class="btn small" data-photo="camera">Camera</button>
+              <button type="button" class="btn small" data-photo="library">Choose</button>
+              <button type="button" class="btn small danger" data-photo="remove" hidden>Remove</button>
+            </div>
+            <div class="vendor-photo">
+              <button type="button" class="photo-preview" data-photo="view" aria-label="Photo 3"><img alt="" hidden><span>Photo 3</span></button>
+              <button type="button" class="btn small" data-photo="camera">Camera</button>
+              <button type="button" class="btn small" data-photo="library">Choose</button>
+              <button type="button" class="btn small danger" data-photo="remove" hidden>Remove</button>
+            </div>
+          </div>
           <div class="dialog-actions">
             <button type="button" id="btn-delete-vendor" class="btn danger">Delete</button>
             <button type="button" id="btn-vendor-items" class="btn">Show items</button>
@@ -253,6 +274,8 @@
   <input type="file" id="vendor-csv-input" accept=".csv,text/csv,text/plain" hidden>
   <input type="file" id="photo-input" accept="image/*" hidden>
   <input type="file" id="camera-input" accept="image/*" capture="environment" hidden>
+  <input type="file" id="vendor-photo-input" accept="image/*" hidden>
+  <input type="file" id="vendor-camera-input" accept="image/*" capture="environment" hidden>
   <input type="file" id="photos-bulk-input" accept="image/*" multiple hidden>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
