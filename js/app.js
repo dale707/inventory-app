@@ -229,6 +229,7 @@ function renderHistory() {
         <div class="order-actions">
           <button class="btn danger" data-action="delete-order">Delete</button>
           <span class="spacer"></span>
+          <button class="btn" data-action="copy-order">Copy</button>
           <button class="btn" data-action="export-order">Export</button>
           <button class="btn" data-action="reorder">Reorder</button>
         </div>
@@ -505,6 +506,26 @@ function toast(msg) {
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+}
+
+// ---------- Clipboard ----------
+
+// navigator.clipboard needs a secure context (HTTPS/localhost); fall back to execCommand on LAN HTTP.
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const ta = Object.assign(document.createElement('textarea'), { value: text, readOnly: true });
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+    document.body.append(ta);
+    ta.select();
+    ta.setSelectionRange(0, text.length); // iOS
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { /* unsupported */ }
+    ta.remove();
+    return ok;
+  }
 }
 
 // ---------- Item add/edit dialog ----------
@@ -891,20 +912,28 @@ function onListClick(e) {
   if (!btn) return;
   const id = btn.closest('[data-id]')?.dataset.id;
   const current = store.getState().selected[id] || 0;
+  // Dropping a quantity to 0 removes the item from Selected, so ask first.
+  const confirmZero = () => {
+    const name = store.getItem(id)?.name1 || 'this item';
+    return confirm(`Set the quantity of “${name}” to 0? It will be removed from Selected.`);
+  };
 
   switch (btn.dataset.action) {
     case 'inc':
       store.setSelectedQty(id, current + 1);
       break;
     case 'dec':
+      if (current - 1 <= 0 && !confirmZero()) break;
       store.setSelectedQty(id, current - 1);
       break;
     case 'set-qty': {
       const input = prompt('Quantity', current);
       if (input === null) break;
       const n = Number(input);
-      if (Number.isFinite(n) && n >= 0) store.setSelectedQty(id, n);
-      else alert('Please enter a number of 0 or more.');
+      if (Number.isFinite(n) && n >= 0) {
+        if (n === 0 && current > 0 && !confirmZero()) break;
+        store.setSelectedQty(id, n);
+      } else alert('Please enter a number of 0 or more.');
       break;
     }
     case 'edit':
@@ -921,6 +950,12 @@ function onListClick(e) {
     case 'export-order': {
       const order = store.getState().orders.find((o) => o.id === id);
       if (order) saveFile(`${safeFileName(order.orderNo)}.csv`, ordersCsv([order]));
+      break;
+    }
+    case 'copy-order': {
+      const order = store.getState().orders.find((o) => o.id === id);
+      if (order) copyText(order.lines.map((l) => [l.name1, fmtQty(l.qty), l.orderUnit].filter(Boolean).join(' ')).join('\n'))
+        .then((ok) => toast(ok ? `Copied ${plural(order.lines.length, 'line')}` : 'Could not copy'));
       break;
     }
     case 'delete-order':
@@ -1009,9 +1044,11 @@ const menuActions = {
   // One ZIP of all photos named <ID>.jpg, so it can be re-imported with "Import photos".
   // Copies of an item under other vendors share its ID, so only the first photo per ID is kept.
   'export-photos': async () => {
-    const withPhotos = store.getState().items.filter((i) => i.img);
-    if (!withPhotos.length) return toast('No photos to export');
-    toast(`Preparing ${withPhotos.length} photo(s)…`);
+    const { items, vendors } = store.getState();
+    const withPhotos = items.filter((i) => i.img);
+    const vendorSlots = vendors.flatMap((v) => v.imgs.map((stamp, n) => ({ v, n, stamp }))).filter((s) => s.stamp);
+    if (!withPhotos.length && !vendorSlots.length) return toast('No photos to export');
+    toast(`Preparing ${withPhotos.length + vendorSlots.length} photo(s)…`);
     const used = new Set();
     const files = [];
     for (const item of withPhotos) {
@@ -1024,6 +1061,18 @@ const menuActions = {
       used.add(name.toLowerCase());
       files.push({ name, blob });
     }
+    // Vendor photos go in a "vendors/" folder as <Vendor Name>-<slot>.jpg, so they don't get
+    // mistaken for item photos by bulk import.
+    for (const { v, n } of vendorSlots) {
+      const blob = await images.getImage(store.vendorImageKey(v.id, n)).catch(() => null);
+      if (!blob) continue;
+      const base = `vendors/${safeFileName(v.name)}-${n + 1}`;
+      let name = `${base}.jpg`;
+      for (let k = 2; used.has(name.toLowerCase()); k++) name = `${base}_${k}.jpg`;
+      used.add(name.toLowerCase());
+      files.push({ name, blob });
+    }
+    if (!files.length) return toast('No photos to export');
     saveFile(`photos-${today()}.zip`, await makeZip(files));
   },
   'export-orders': () => {

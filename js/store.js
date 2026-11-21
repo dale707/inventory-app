@@ -7,7 +7,7 @@
 //   selected: { [itemId]: qty }
 //   orders:   [{ id, orderNo, vendor, createdAt, lines: [{ itemId, code, brand, name1, name2, size, orderUnit, qty }] }]  newest first
 //   daySeq:   { date: 'YYYYMMDD', n }  last order sequence number used on that date
-//   codeSeq:  last number used for auto-assigned item IDs (0001, 0002, ...)
+//   codeSeq:  last number used for auto-assigned item IDs (id00001, id00002, ...)
 //   vendors:  [{ id, name, alias1, alias2, howToOrder, bookLatestDate, deliveryDate, sales, phone, email, remarks, imgs }]
 //             vendor details; items/orders refer to a vendor by name (case-insensitive);
 //             imgs: VENDOR_PHOTO_COUNT photo stamps ('' = empty slot), blobs keyed by vendorImageKey()
@@ -109,7 +109,8 @@ function migrate(s) {
   }
   delete s.nextOrderNo;
   delete s.lastPrefix;
-  const numericCodes = s.items.map((i) => (/^\d+$/.test(i.code) ? Number(i.code) : 0));
+  // Numbering continues after the highest number in use, old style (0001) or new (id00001).
+  const numericCodes = s.items.map((i) => Number(i.code.match(ID_PATTERN)?.[1] ?? 0));
   s.codeSeq = Math.max(s.codeSeq, 0, ...numericCodes);
   for (const i of s.items) if (!i.code) i.code = assignCode(s);
   return s;
@@ -120,12 +121,19 @@ const pendingPhotoCopies = [];
 // Photo copies migrate() couldn't do itself (IndexedDB is async): [{ from, to }] item ids.
 export const takePendingPhotoCopies = () => pendingPhotoCopies.splice(0);
 
+// Auto-assigned item IDs: "id" + a number padded to ID_DIGITS (id00001). Items created before
+// this format keep their plain-number IDs (0001); both count towards the next number.
+const ID_PREFIX = 'id';
+const ID_DIGITS = 5;
+const ID_PATTERN = /^(?:id)?(\d+)$/i;
+export const formatCode = (n) => ID_PREFIX + String(n).padStart(ID_DIGITS, '0');
+
 const codeTaken = (s, code) => s.items.some((i) => i.code.toLowerCase() === code.toLowerCase());
 
 function nextFreeCode(s) {
   let n = s.codeSeq;
   let code;
-  do code = String(++n).padStart(4, '0'); while (codeTaken(s, code));
+  do code = formatCode(++n); while (codeTaken(s, code));
   return { n, code };
 }
 
