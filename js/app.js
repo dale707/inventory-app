@@ -1031,7 +1031,7 @@ async function saveFile(filename, blob) {
 const menuActions = {
   import: () => csvInput.click(),
   'import-photos': () => {
-    if (!store.getState().items.length) return toast('Add or import items first');
+    if (!store.getState().items.length && !vendorEntries().length) return toast('Add or import items first');
     photosBulkInput.click();
   },
   'export-inventory': () => {
@@ -1087,12 +1087,12 @@ const menuActions = {
   },
   'import-vendors': () => vendorCsvInput.click(),
   'export-vendors': () => {
-    const { vendors } = store.getState();
-    if (!vendors.length) return toast('No vendor details to export');
-    const sorted = [...vendors].sort((a, b) => a.name.localeCompare(b.name));
+    // Every vendor in the Vendor tab, including those only named on items/orders (no details yet).
+    const entries = vendorEntries();
+    if (!entries.length) return toast('No vendors to export');
     saveFile(`vendors-${today()}.csv`, csvBlob(toCSV(
       store.VENDOR_FIELDS.map((f) => store.VENDOR_LABELS[f]),
-      sorted.map((v) => store.VENDOR_FIELDS.map((f) => v[f])))));
+      entries.map((e) => store.VENDOR_FIELDS.map((f) => (f === 'name' ? e.name : e.record?.[f] ?? ''))))));
   },
   storage: async () => {
     const persisted = await requestPersistentStorage();
@@ -1166,13 +1166,34 @@ photosBulkInput.addEventListener('change', async () => {
   const group = (key) => items.reduce((m, i) => m.set(key(i), [...(m.get(key(i)) || []), i]), new Map());
   const byCode = group((i) => i.code.toLowerCase());
   const byName = group((i) => i.name1.toLowerCase());
+  // Vendor photos are exported as <Vendor Name>-<slot>.jpg (name passed through safeFileName).
+  const vendorsByFileName = new Map(vendorEntries().map((e) => [safeFileName(e.name).toLowerCase(), e]));
+  const vendorImgs = new Map(); // vendor id → imgs (updated slots)
   const stamps = {};
   const unmatched = [];
   toast(`Importing ${files.length} photo(s)…`);
   for (const file of files) {
     const base = file.name.replace(/\.[^.]+$/, '').trim().toLowerCase();
     const matched = byCode.get(base) || byName.get(base);
-    if (!matched) { unmatched.push(file.name); continue; }
+    if (!matched) {
+      const m = base.match(/^(.+)-(\d+)$/);
+      const slot = m ? Number(m[2]) - 1 : -1;
+      const entry = m && vendorsByFileName.get(m[1].trim());
+      if (!entry || slot < 0 || slot >= store.VENDOR_PHOTO_COUNT) { unmatched.push(file.name); continue; }
+      try {
+        const blob = await images.resizeImage(file);
+        // A vendor only named on items/orders gets a details record to hold the photo.
+        const record = entry.record || (entry.record = store.saveVendor({ name: entry.name }).vendor);
+        if (!record) throw new Error('no record');
+        await images.putImage(store.vendorImageKey(record.id, slot), blob);
+        const imgs = vendorImgs.get(record.id) || [...record.imgs];
+        imgs[slot] = images.newStamp();
+        vendorImgs.set(record.id, imgs);
+      } catch {
+        unmatched.push(file.name);
+      }
+      continue;
+    }
     try {
       const blob = await images.resizeImage(file);
       for (const item of matched) {
@@ -1184,11 +1205,12 @@ photosBulkInput.addEventListener('change', async () => {
     }
   }
   store.setImageStamps(stamps);
+  for (const [id, imgs] of vendorImgs) store.setVendorImages(id, imgs);
   const done = files.length - unmatched.length;
   if (unmatched.length) {
     const shown = unmatched.slice(0, 10).join('\n');
     const more = unmatched.length > 10 ? `\n…and ${unmatched.length - 10} more` : '';
-    alert(`${done} photo(s) added.\n\nThese didn't match any item ID or Name1 (or couldn't be read):\n${shown}${more}`);
+    alert(`${done} photo(s) added.\n\nThese didn't match any item ID, Name1 or vendor photo name (or couldn't be read):\n${shown}${more}`);
   } else {
     toast(`${done} photo(s) added`);
   }
