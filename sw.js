@@ -1,6 +1,6 @@
 // Offline support: serve from cache immediately, refresh the cache in the background
 // (stale-while-revalidate). Bump CACHE when ASSETS changes so old caches are dropped.
-const CACHE = 'inventoryapp-v11';
+const CACHE = 'inventoryapp-v12';
 const ASSETS = [
   './',
   'index.html',
@@ -10,6 +10,8 @@ const ASSETS = [
   'js/csv.js',
   'js/images.js',
   'js/zip.js',
+  'js/scanner.js',
+  'js/vendor/zxing.min.js',
   'manifest.json',
   'icons/icon-192.png',
   'icons/icon-512.png',

@@ -32,7 +32,12 @@
       <nav id="inventory-vendors" class="vendor-pane" aria-label="Vendors"></nav>
       <div class="pane">
         <div class="toolbar">
-          <input id="search" type="search" placeholder="Search" autocomplete="off" enterkeyhint="search">
+          <div class="search-box">
+            <input id="search" type="search" placeholder="Search" autocomplete="off" enterkeyhint="search">
+            <button type="button" id="btn-scan" class="scan-btn" aria-label="Scan barcode" title="Scan barcode">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7V4h3M18 4h3v3M21 17v3h-3M6 20H3v-3M7 8v8M10 8v8M13 8v8M17 8v8"/></svg>
+            </button>
+          </div>
           <select id="category-filter" aria-label="Category"></select>
           <select id="sort-by" aria-label="Sort by">
             <option value="name1">Sort: Name1</option>
@@ -156,6 +161,11 @@
         <label>ID<input name="code" readonly tabindex="-1"></label>
         <label>Brand<select name="brand"></select></label>
       </div>
+      <div class="field-label">Barcode</div>
+      <div class="input-action">
+        <input name="barcode" aria-label="Barcode" autocomplete="off" autocapitalize="off" spellcheck="false">
+        <button type="button" id="btn-scan-barcode" class="btn small">Scan</button>
+      </div>
       <label>Category<select name="category"></select></label>
       <label>Name1<input name="name1" required autocomplete="off"></label>
       <label>Name2<input name="name2" autocomplete="off"></label>
@@ -271,6 +281,18 @@
     </div>
   </dialog>
 
+  <dialog id="scan-dialog" class="scan" aria-label="Scan barcode">
+    <h2>Scan Barcode</h2>
+    <video playsinline muted autoplay></video>
+    <p class="scan-status"></p>
+    <div class="dialog-actions">
+      <button type="button" class="btn" data-scan="photo">Take photo instead</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn" data-scan="cancel">Cancel</button>
+    </div>
+  </dialog>
+
+  <input type="file" id="scan-photo-input" accept="image/*" capture="environment" hidden>
   <input type="file" id="csv-input" accept=".csv,text/csv,text/plain" hidden>
   <input type="file" id="vendor-csv-input" accept=".csv,text/csv,text/plain" hidden>
   <input type="file" id="orders-csv-input" accept=".csv,text/csv,text/plain" hidden>

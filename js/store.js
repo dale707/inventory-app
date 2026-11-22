@@ -1,6 +1,6 @@
 // All app state lives in one object persisted to localStorage on every change.
 // Shape:
-//   items:    [{ id, code, brand, category, name1, name2, size, orderUnit, vendor, remarks, noMore, img }]
+//   items:    [{ id, code, brand, category, name1, name2, size, orderUnit, vendor, remarks, barcode, noMore, img }]
 //             (id is internal; code is the user-facing "ID", shared by copies of the item under
 //             other vendors — code + vendor is unique; noMore: boolean "no more" flag;
 //             img is a photo stamp or '' — see images.js)
@@ -18,7 +18,7 @@
 const KEY = 'inventoryapp.v1';
 const listeners = [];
 
-export const ITEM_FIELDS = ['code', 'brand', 'category', 'name1', 'name2', 'size', 'orderUnit', 'vendor', 'remarks'];
+export const ITEM_FIELDS = ['code', 'brand', 'category', 'name1', 'name2', 'size', 'orderUnit', 'vendor', 'remarks', 'barcode'];
 
 // noMore is a boolean, so it's kept out of ITEM_FIELDS (text fields) and handled on its own.
 export const NO_MORE_LABEL = 'No More';
@@ -28,7 +28,7 @@ const toBool = (v) => v === true || /^(yes|y|true|1|x)$/i.test(String(v ?? '').t
 // Column headers used for CSV export (import also accepts these, see csv.js).
 export const FIELD_LABELS = {
   code: 'ID', brand: 'Brand', category: 'Category', name1: 'Name1', name2: 'Name2',
-  size: 'Size', orderUnit: 'Order Unit', vendor: 'Vendor', remarks: 'Remarks',
+  size: 'Size', orderUnit: 'Order Unit', vendor: 'Vendor', remarks: 'Remarks', barcode: 'Barcode',
 };
 
 export const VENDOR_FIELDS = ['name', 'alias1', 'alias2', 'howToOrder', 'bookLatestDate', 'deliveryDate', 'sales', 'phone', 'email', 'remarks'];

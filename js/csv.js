@@ -14,6 +14,7 @@ const COLUMNS = {
   vendor2: ['vendor2', 'vendor 2', 'supplier2', 'supplier 2'], // older files: becomes a second row
   remarks: ['remarks', 'remark', 'notes', 'note', 'comments', 'comment'],
   noMore: ['no more', 'nomore', 'discontinued'], // Yes/No
+  barcode: ['barcode', 'bar code', 'barcode number', 'upc', 'ean', 'gtin', 'jan'],
 };
 
 // Same for vendor details.
@@ -80,7 +81,7 @@ export function rowsToItems(rows) {
   if (rows.length < 2) return { error: 'The file needs a header row and at least one item row.' };
   const idx = columnIndex(rows[0], COLUMNS);
   if (idx.name1 === undefined && idx.code === undefined) {
-    return { error: 'No "Name1" or "ID" column found.\nExpected headers: ID, Brand, Category, Name1, Name2, Size, Order Unit, Vendor, Remarks, No More' };
+    return { error: 'No "Name1" or "ID" column found.\nExpected headers: ID, Brand, Category, Name1, Name2, Size, Order Unit, Vendor, Remarks, Barcode, No More' };
   }
 
   const items = [];

@@ -2,6 +2,7 @@ import * as store from './store.js';
 import { parseCSV, rowsToItems, rowsToOrders, rowsToVendors, toCSV } from './csv.js';
 import * as images from './images.js';
 import { makeZip } from './zip.js';
+import { scanBarcode } from './scanner.js';
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -112,7 +113,7 @@ const sortItems = (field) => (a, b) =>
   (!a[field] - !b[field]) || a[field].localeCompare(b[field]) ||
   a.name1.localeCompare(b.name1) || a.code.localeCompare(b.code, undefined, { numeric: true });
 
-const DETAIL_FIELDS = [['brand', 'Brand'], ['category', 'Category'], ['size', 'Size'], ['orderUnit', 'Order Unit']];
+const DETAIL_FIELDS = [['brand', 'Brand'], ['category', 'Category'], ['size', 'Size'], ['orderUnit', 'Order Unit'], ['barcode', 'Barcode']];
 
 // Labelled item fields shown in full in Inventory rows (Remarks on its own wrapping line).
 function itemDetails(i, withVendor) {
@@ -133,7 +134,7 @@ function renderInventory() {
     cats.map((c) => `<option${c === cat ? ' selected' : ''}>${esc(c)}</option>`).join('');
 
   const q = $('#search').value.trim().toLowerCase();
-  const matches = (i) => [i.name1, i.name2, i.remarks, i.vendor, i.code, i.brand]
+  const matches = (i) => [i.name1, i.name2, i.remarks, i.vendor, i.code, i.brand, i.barcode]
     .some((v) => v.toLowerCase().includes(q));
   const withVendors = (list) => list.map((i) => ({ item: i, vendors: itemVendors(i) }));
   // Vendor counts follow the search/category filter, so it's clear where the matches are.
@@ -613,6 +614,27 @@ async function openItemDialog(id) {
   itemDialog.showModal();
   if (item?.img) showPhoto(await images.imageUrl(item.id, item.img));
 }
+
+$('#btn-scan-barcode').addEventListener('click', async () => {
+  const code = await scanBarcode();
+  if (code) itemForm.elements.barcode.value = code;
+});
+
+// Inventory search by barcode: shows the matching items, or offers to add a new one.
+$('#btn-scan').addEventListener('click', async () => {
+  const code = await scanBarcode();
+  if (!code) return;
+  const known = store.getState().items.some((i) => i.barcode.toLowerCase() === code.toLowerCase());
+  if (known) {
+    $('#search').value = code;
+    view.inventoryVendor = ALL;
+    renderInventory();
+    loadThumbs();
+  } else if (confirm(`No item has barcode ${code}.\nAdd a new item with it?`)) {
+    await openItemDialog(null);
+    itemForm.elements.barcode.value = code;
+  }
+});
 
 // "Take photo" uses an input with capture="environment", which opens the camera directly on
 // phones/iPads; "Choose photo" (and tapping the preview) opens the photo library/files.
