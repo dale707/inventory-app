@@ -134,6 +134,11 @@ main { padding: 0 16px calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 16px
 .order-lines li { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); font-size: 15px; }
 .order-lines small { color: var(--muted); }
 .order-lines .line-qty { font-weight: 600; white-space: nowrap; }
+.order-lines .line-end { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.order-lines .oos { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; cursor: pointer; }
+.order-lines .oos input { width: 20px; height: 20px; margin: 0; accent-color: var(--danger); }
+.order-lines li.out-of-stock > span:first-child { text-decoration: line-through; opacity: .6; }
+.order-lines li.out-of-stock .oos { color: var(--danger); font-weight: 600; }
 .order-actions { display: flex; gap: 8px; justify-content: flex-end; padding: 8px 16px 12px; }
 
 /* Tab bar */

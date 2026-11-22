@@ -30,6 +30,21 @@ const VENDOR_COLUMNS = {
   remarks: ['remarks', 'remarks 1', 'remarks1', 'remark', 'notes', 'note', 'comments'],
 };
 
+// Same for order history (one row per order line, as "Export order history CSV" writes it).
+const ORDER_COLUMNS = {
+  orderNo: ['order no', 'order no.', 'order number', 'orderno', 'order #', 'order', 'po', 'po number'],
+  vendor: COLUMNS.vendor,
+  date: ['date', 'order date', 'created', 'created at'],
+  code: COLUMNS.code,
+  brand: COLUMNS.brand,
+  name1: COLUMNS.name1,
+  name2: COLUMNS.name2,
+  size: COLUMNS.size,
+  qty: ['qty', 'quantity', 'qty ordered', 'amount'],
+  orderUnit: COLUMNS.orderUnit,
+  outOfStock: ['out of stock', 'outofstock', 'oos', 'no stock'], // Yes/No
+};
+
 const normHeader = (h) => h.trim().toLowerCase().replace(/[\s_-]+/g, ' ');
 
 export function parseCSV(text) {
@@ -96,6 +111,22 @@ export function rowsToVendors(rows) {
     if (v.name) vendors.push(v); else skipped++;
   }
   return { vendors, skipped };
+}
+
+// Returns { rows, skipped } or { error }; rows without an Order No or a Name1/ID are skipped.
+export function rowsToOrders(rows) {
+  if (rows.length < 2) return { error: 'The file needs a header row and at least one order line.' };
+  const idx = columnIndex(rows[0], ORDER_COLUMNS);
+  if (idx.orderNo === undefined || (idx.name1 === undefined && idx.code === undefined)) {
+    return { error: 'No "Order No" and "Name1" (or "ID") columns found.\nExpected headers: Order No, Vendor, Date, ID, Brand, Name1, Name2, Size, Qty, Order Unit, Out of Stock' };
+  }
+  const out = [];
+  let skipped = 0;
+  for (const r of rows.slice(1)) {
+    const line = pick(r, idx);
+    if (line.orderNo && (line.name1 || line.code)) out.push(line); else skipped++;
+  }
+  return { rows: out, skipped };
 }
 
 // { field: column index } for the header row, using an alias table like COLUMNS.

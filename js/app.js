@@ -1,5 +1,5 @@
 import * as store from './store.js';
-import { parseCSV, rowsToItems, rowsToVendors, toCSV } from './csv.js';
+import { parseCSV, rowsToItems, rowsToOrders, rowsToVendors, toCSV } from './csv.js';
 import * as images from './images.js';
 import { makeZip } from './zip.js';
 
@@ -199,6 +199,14 @@ function renderSelected() {
   $('#selected-summary').textContent = selectionSummary(rows);
 }
 
+// Orders expanded in History; kept across re-renders (e.g. ticking Out of stock).
+const openOrders = new Set();
+$('#history-list').addEventListener('toggle', (e) => {
+  const id = e.target.closest?.('[data-id]')?.dataset.id;
+  if (!id || e.target.tagName !== 'DETAILS') return;
+  if (e.target.open) openOrders.add(id); else openOrders.delete(id);
+}, true);
+
 function renderHistory() {
   const { orders } = store.getState();
   const list = $('#history-list');
@@ -213,17 +221,21 @@ function renderHistory() {
   }
   list.innerHTML = shown.map((o) => {
     const units = o.lines.reduce((s, l) => s + l.qty, 0);
+    const oos = o.lines.filter((l) => l.outOfStock).length;
     return `<li class="order" data-id="${esc(o.id)}">
-      <details>
+      <details${openOrders.has(o.id) ? ' open' : ''}>
         <summary>
           <span class="row-title">${esc(o.orderNo)}</span>
-          <span class="row-sub">${esc(fmtDate(o.createdAt))} · ${plural(o.lines.length, 'item')} · ${plural(units, 'unit')}</span>
+          <span class="row-sub">${esc(fmtDate(o.createdAt))} · ${plural(o.lines.length, 'item')} · ${plural(units, 'unit')}${oos ? ` · ${fmtQty(oos)} out of stock` : ''}</span>
         </summary>
         <ul class="order-lines">
-          ${o.lines.map((l) => `<li>
+          ${o.lines.map((l, n) => `<li data-line="${n}"${l.outOfStock ? ' class="out-of-stock"' : ''}>
             <span>${esc(l.name1)}${l.name2 || l.size ? ` <small>${joinDot([l.name2, l.size])}</small>` : ''}
               ${l.code || l.brand ? `<br><small>${joinDot([l.code, l.brand])}</small>` : ''}</span>
-            <span class="line-qty">${fmtQty(l.qty)}${l.orderUnit ? ' × ' + esc(l.orderUnit) : ''}</span>
+            <span class="line-end">
+              <span class="line-qty">${fmtQty(l.qty)}${l.orderUnit ? ' × ' + esc(l.orderUnit) : ''}</span>
+              <label class="oos"><input type="checkbox" data-action="line-oos"${l.outOfStock ? ' checked' : ''}>Out of stock</label>
+            </span>
           </li>`).join('')}
         </ul>
         <div class="order-actions">
@@ -958,6 +970,9 @@ function onListClick(e) {
         .then((ok) => toast(ok ? `Copied ${plural(order.lines.length, 'line')}` : 'Could not copy'));
       break;
     }
+    case 'line-oos':
+      store.setLineOutOfStock(id, Number(btn.closest('[data-line]').dataset.line), btn.checked);
+      break;
     case 'delete-order':
       if (confirm('Delete this order from history?')) store.deleteOrder(id);
       break;
@@ -985,6 +1000,7 @@ $('#btn-clear-selected').addEventListener('click', () => {
 const menuDialog = $('#menu-dialog');
 const csvInput = $('#csv-input');
 const vendorCsvInput = $('#vendor-csv-input');
+const ordersCsvInput = $('#orders-csv-input');
 const photosBulkInput = $('#photos-bulk-input');
 
 
@@ -1001,10 +1017,10 @@ const csvDate = (iso) => {
 const today = () => localDay(new Date()); // for export file names
 
 const ordersCsv = (orders) => csvBlob(toCSV(
-  ['Order No', 'Vendor', 'Date', 'ID', 'Brand', 'Name1', 'Name2', 'Size', 'Qty', 'Order Unit'],
+  ['Order No', 'Vendor', 'Date', 'ID', 'Brand', 'Name1', 'Name2', 'Size', 'Qty', 'Order Unit', 'Out of Stock'],
   orders.flatMap((o) => o.lines.map((l) => [
     o.orderNo, o.vendor, csvDate(o.createdAt), l.code, l.brand, l.name1, l.name2, l.size,
-    l.qty, l.orderUnit,
+    l.qty, l.orderUnit, l.outOfStock ? 'Yes' : '',
   ]))));
 
 const safeFileName = (s) => s.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'photo';
@@ -1086,6 +1102,7 @@ const menuActions = {
     renderOptions();
   },
   'import-vendors': () => vendorCsvInput.click(),
+  'import-orders': () => ordersCsvInput.click(),
   'export-vendors': () => {
     // Every vendor in the Vendor tab, including those only named on items/orders (no details yet).
     const entries = vendorEntries();
@@ -1154,6 +1171,23 @@ vendorCsvInput.addEventListener('change', async () => {
   vendorDirty = false;
   const { added, updated } = store.importVendors(result.vendors);
   toast(`Imported: ${added} added, ${updated} updated`);
+});
+
+ordersCsvInput.addEventListener('change', async () => {
+  const file = ordersCsvInput.files[0];
+  ordersCsvInput.value = '';
+  if (!file) return;
+  const result = rowsToOrders(parseCSV(await file.text()));
+  if (result.error) return alert(result.error);
+  if (!result.rows.length) return alert('No order lines found in the file.');
+  const count = new Set(result.rows.map((r) => r.orderNo.toLowerCase())).size;
+  const skippedNote = result.skipped ? `\n${result.skipped} row(s) without an Order No or Name1/ID will be skipped.` : '';
+  if (!confirm(`Import ${plural(count, 'order')} (${plural(result.rows.length, 'line')})?\nOrders whose Order No already exists are replaced; others are added.${skippedNote}`)) return;
+  const { added, replaced } = store.importOrders(result.rows);
+  view.historyVendor = ALL;
+  render();
+  showTab('history');
+  toast(`Imported: ${added} added, ${replaced} replaced`);
 });
 
 // Matches each photo to items by file name: "BOX-S.jpg" → every item with ID BOX-S (all

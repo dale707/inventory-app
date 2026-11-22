@@ -5,7 +5,8 @@
 //             other vendors — code + vendor is unique; noMore: boolean "no more" flag;
 //             img is a photo stamp or '' — see images.js)
 //   selected: { [itemId]: qty }
-//   orders:   [{ id, orderNo, vendor, createdAt, lines: [{ itemId, code, brand, name1, name2, size, orderUnit, qty }] }]  newest first
+//   orders:   [{ id, orderNo, vendor, createdAt, lines: [{ itemId, code, brand, name1, name2, size, orderUnit, qty, outOfStock }] }]  newest first
+//             (outOfStock: the vendor was out of stock of that line; true or absent)
 //   daySeq:   { date: 'YYYYMMDD', n }  last order sequence number used on that date
 //   codeSeq:  last number used for auto-assigned item IDs (id00001, id00002, ...)
 //   vendors:  [{ id, name, alias1, alias2, howToOrder, bookLatestDate, deliveryDate, sales, phone, email, remarks, imgs }]
@@ -307,6 +308,74 @@ export function placeOrder(vendorByItem) {
   state.orders.unshift(...[...orders].reverse());
   if (orders.length) commit();
   return orders;
+}
+
+// Marks one order line as out of stock at the vendor (or clears it).
+export function setLineOutOfStock(orderId, index, value) {
+  const line = state.orders.find((o) => o.id === orderId)?.lines[index];
+  if (!line) return;
+  if (value) line.outOfStock = true; else delete line.outOfStock;
+  commit();
+}
+
+// Local "YYYY-MM-DD HH:MM" (as exported), or anything Date can parse → ISO string, else null.
+function parseOrderDate(text) {
+  const m = String(text ?? '').trim().match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  const d = m ? new Date(+m[1], m[2] - 1, +m[3], +(m[4] ?? 0), +(m[5] ?? 0), +(m[6] ?? 0)) : new Date(text);
+  return text && !Number.isNaN(d.getTime()) ? d.toISOString() : null;
+}
+
+const ORDER_NO_PATTERN = /^(.*)-(\d{8})-(\d{3,})$/;
+
+// Merges order history rows (from rowsToOrders in csv.js; one row per line) by Order No: an
+// order whose number already exists is replaced, others are added. Lines are linked to the
+// item with the same ID (and vendor, if there is one), else the same Name1, so Reorder works.
+export function importOrders(rows) {
+  const groups = new Map();
+  for (const r of rows) {
+    const key = r.orderNo.toLowerCase();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+  const findItem = (l, vendor) => {
+    const byVendor = (i) => same(i.vendor, vendor);
+    const pickOne = (list) => list.find(byVendor) || list[0];
+    return pickOne(state.items.filter((i) => (l.code ? same(i.code, l.code) : same(i.name1, l.name1 ?? ''))));
+  };
+  let added = 0, replaced = 0;
+  for (const group of groups.values()) {
+    const first = group[0];
+    const orderNo = clean(first.orderNo);
+    const parsed = orderNo.match(ORDER_NO_PATTERN);
+    const vendor = clean(group.find((r) => r.vendor)?.vendor ?? parsed?.[1] ?? '');
+    const fromNo = parsed && parseOrderDate(`${parsed[2].slice(0, 4)}-${parsed[2].slice(4, 6)}-${parsed[2].slice(6)}`);
+    const createdAt = parseOrderDate(group.find((r) => r.date)?.date) || fromNo || new Date().toISOString();
+    const lines = group.filter((r) => r.name1 || r.code).map((r) => {
+      const qty = Number(String(r.qty ?? '').replace(/,/g, ''));
+      const line = {
+        itemId: findItem(r, vendor)?.id ?? '', code: clean(r.code), brand: clean(r.brand), name1: clean(r.name1 || r.code),
+        name2: clean(r.name2), size: clean(r.size), orderUnit: clean(r.orderUnit), qty: Number.isFinite(qty) ? qty : 0,
+      };
+      if (toBool(r.outOfStock)) line.outOfStock = true;
+      return line;
+    });
+    const existing = state.orders.find((o) => same(o.orderNo, orderNo));
+    if (existing) {
+      Object.assign(existing, { vendor, createdAt, lines });
+      replaced++;
+    } else {
+      state.orders.push({ id: uid(), orderNo, vendor, createdAt, lines });
+      added++;
+    }
+    // Never hand out an imported order number again.
+    if (parsed) {
+      const [date, n] = [parsed[2], Number(parsed[3])];
+      if (date > state.daySeq.date || (date === state.daySeq.date && n > state.daySeq.n)) state.daySeq = { date, n };
+    }
+  }
+  state.orders.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  commit();
+  return { added, replaced };
 }
 
 export function deleteOrder(id) {
